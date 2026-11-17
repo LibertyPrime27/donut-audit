@@ -168,6 +168,7 @@ public final class RenderHook {
     private static volatile Object cachedMc;
     private static volatile Object cachedFont;
     private static volatile Method cachedDraw;
+    private static volatile Method cachedFill;
     private static volatile boolean drawShadow = true;
 
     // Shared accessor for the Minecraft singleton instance.
@@ -212,11 +213,84 @@ public final class RenderHook {
             int y = 4;
             for (int i = 0; i < lines.length; i++) {
                 int color = i == 0 ? 0xFF55FF55 : (i == 1 ? 0xFFAAAAAA : 0xFFFFFFFF);
-                if (drawShadow) cachedDraw.invoke(graphics, cachedFont, lines[i], 4, y, color, true);
-                else cachedDraw.invoke(graphics, cachedFont, lines[i], 4, y, color);
+                drawStr(graphics, lines[i], 4, y, color);
                 y += 10;
             }
+
+            // Menu panels (only one open at a time).
+            if (Overlay.isVisible() && barry.ui.FilterMenu.isOpen()) {
+                drawFilterMenu(graphics);
+            } else if (Overlay.isVisible() && barry.ui.SettingsMenu.isOpen()) {
+                drawSettingsMenu(graphics);
+            }
         } catch (Throwable ignored) {}
+    }
+
+    private static void drawStr(Object graphics, String s, int x, int y, int color) {
+        try {
+            if (drawShadow) cachedDraw.invoke(graphics, cachedFont, s, x, y, color, true);
+            else cachedDraw.invoke(graphics, cachedFont, s, x, y, color);
+        } catch (Throwable ignored) {}
+    }
+
+    private static void fillRect(Object graphics, int x1, int y1, int x2, int y2, int argb) {
+        try {
+            if (cachedFill == null) cachedFill = resolveFillMethod(graphics);
+            if (cachedFill != null) cachedFill.invoke(graphics, x1, y1, x2, y2, argb);
+        } catch (Throwable ignored) {}
+    }
+
+    private static void drawFilterMenu(Object graphics) {
+        barry.core.OreType[] ores = barry.core.OreType.values();
+        int x = 140, top = 24, w = 210;
+        int rowH = 10;
+        int h = (ores.length + 2) * rowH + 8;
+        // Background + border.
+        fillRect(graphics, x - 6, top - 6, x + w, top + h, 0xC0101014);
+        fillRect(graphics, x - 6, top - 6, x + w, top - 5, 0xFF55FF55);
+        fillRect(graphics, x - 6, top + h - 1, x + w, top + h, 0xFF55FF55);
+
+        int y = top;
+        drawStr(graphics, "FILTER  M:close  UP/DOWN:move  RIGHT:toggle", x, y, 0xFF55FF55);
+        y += rowH;
+        int sel = barry.ui.FilterMenu.selected();
+        for (int i = 0; i < ores.length; i++) {
+            barry.core.OreType o = ores[i];
+            boolean on = o.isEnabled();
+            boolean selected = (i == sel);
+            if (selected) fillRect(graphics, x - 4, y - 1, x + w - 2, y + rowH - 2, 0x40FFFFFF);
+            String box = on ? "[x] " : "[ ] ";
+            String prefix = selected ? "> " : "  ";
+            int col = selected ? 0xFFFFFFFF : (on ? o.color() : 0xFF666666);
+            drawStr(graphics, prefix + box + o.blockName(), x, y, col);
+            y += rowH;
+        }
+    }
+
+    private static void drawSettingsMenu(Object graphics) {
+        barry.config.KeybindRegistry.Action[] acts = barry.ui.SettingsMenu.ACTIONS;
+        int x = 140, top = 24, w = 260, rowH = 10;
+        int h = (acts.length + 2) * rowH + 8;
+        fillRect(graphics, x - 6, top - 6, x + w, top + h, 0xC0101014);
+        fillRect(graphics, x - 6, top - 6, x + w, top - 5, 0xFF55DDFF);
+        fillRect(graphics, x - 6, top + h - 1, x + w, top + h, 0xFF55DDFF);
+
+        int y = top;
+        drawStr(graphics, "KEYS  K:close  UP/DOWN:move  RIGHT:rebind", x, y, 0xFF55DDFF);
+        y += rowH;
+        int sel = barry.ui.SettingsMenu.selected();
+        boolean capturing = barry.ui.SettingsMenu.isCapturing();
+        for (int i = 0; i < acts.length; i++) {
+            barry.config.KeybindRegistry.Action a = acts[i];
+            boolean selected = (i == sel);
+            if (selected) fillRect(graphics, x - 4, y - 1, x + w - 2, y + rowH - 2, 0x40FFFFFF);
+            String keyLabel = (selected && capturing) ? "< press a key...  Esc=cancel >"
+                                                      : Overlay.keyLabel(a);
+            String prefix = selected ? "> " : "  ";
+            int col = selected ? 0xFFFFFFFF : 0xFFBBBBBB;
+            drawStr(graphics, prefix + a.description() + " : " + keyLabel, x, y, col);
+            y += rowH;
+        }
     }
 
     private static volatile String[] cachedLines = {"[barry] ACTIVE"};
@@ -241,6 +315,8 @@ public final class RenderHook {
             int shown = 0;
             for (var e : near) {
                 if (shown >= 6) break;
+                var ot = barry.core.OreType.fromBlockName(e.getValue().blockName());
+                if (ot != null && !ot.isEnabled()) continue; // hidden via filter menu
                 var p = e.getKey();
                 int d = (int) Math.sqrt(p.distanceSqTo(player));
                 out.add(String.format("  %-18s %d,%d,%d  (%dm)",
@@ -272,6 +348,20 @@ public final class RenderHook {
             }
         }
         return best;
+    }
+
+    // GuiGraphics.fill(int,int,int,int,int) [1.21.x] or
+    // GuiGraphicsExtractor.fill(int,int,int,int,int) [26.x] — (x1,y1,x2,y2,argb).
+    private static Method resolveFillMethod(Object graphics) {
+        for (Method m : graphics.getClass().getMethods()) {
+            if (!"fill".equals(m.getName())) continue;
+            Class<?>[] p = m.getParameterTypes();
+            if (p.length == 5 && p[0] == int.class && p[1] == int.class
+                    && p[2] == int.class && p[3] == int.class && p[4] == int.class) {
+                return m;
+            }
+        }
+        return null;
     }
 
     private static Object resolveFont() {

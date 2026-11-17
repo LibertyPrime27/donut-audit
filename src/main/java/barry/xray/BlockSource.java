@@ -185,7 +185,10 @@ public final class BlockSource {
                         Object block = mGetBlock.invoke(state);
                         OreType ore = blockToOre.get(block);
                         if (ore == null) continue;
-                        if (!ore.isTarget(dim == null ? eng.currentDimension() : dim)) continue;
+                        // Record any matched block regardless of dimension. Matching
+                        // is by exact block identity and the filter menu controls
+                        // what shows, so the dimension gate only risked dropping
+                        // valid hits (e.g. ancient_debris when dim detect lagged).
                         map.put(new barry.util.BlockPos(x, y, z),
                                 BlockConfidence.groundTruth(0, ore.blockName(),
                                         BlockConfidence.Source.BLOCK_UPDATE));

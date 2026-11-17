@@ -13,7 +13,12 @@ public final class KeybindRegistry {
         ESP_TOGGLE("Toggle ESP rendering", 267),   // GLFW_KEY_PAGE_DOWN
         PROFILE_CYCLE("Cycle profile", 266),       // GLFW_KEY_PAGE_UP
         PAUSE_TOGGLE("Pause bot", 269),            // GLFW_KEY_END
-        CONFIG_DUMP("Dump config to stderr", 268); // GLFW_KEY_HOME
+        CONFIG_DUMP("Dump config to stderr", 268), // GLFW_KEY_HOME
+        FILTER_MENU("Toggle filter menu", 77),     // GLFW_KEY_M
+        SETTINGS_MENU("Toggle key settings", 75),  // GLFW_KEY_K
+        MENU_UP("Menu: move up", 265),             // GLFW_KEY_UP
+        MENU_DOWN("Menu: move down", 264),         // GLFW_KEY_DOWN
+        MENU_TOGGLE_ITEM("Menu: toggle / rebind", 262); // GLFW_KEY_RIGHT
 
         private final String description;
         private final int defaultKey;
@@ -31,12 +36,20 @@ public final class KeybindRegistry {
     public static KeybindRegistry get() { return INSTANCE; }
 
     private final Map<Action, Integer> bindings = new ConcurrentHashMap<>();
+    // Raw SDL-scancode overrides set by the in-game rebind menu (26.x SDL input).
+    // When present, the Overlay polls this scancode directly instead of
+    // translating the default GLFW key.
+    private final Map<Action, Integer> sdlOverrides = new ConcurrentHashMap<>();
 
     private KeybindRegistry() {
         for (Action a : Action.values()) {
             bindings.put(a, a.defaultKey);
         }
     }
+
+    public Integer sdlOverride(Action action) { return sdlOverrides.get(action); }
+    public void setSdlOverride(Action action, int scancode) { sdlOverrides.put(action, scancode); }
+    public void clearSdlOverride(Action action) { sdlOverrides.remove(action); }
 
     public int keyFor(Action action) {
         return bindings.getOrDefault(action, action.defaultKey);

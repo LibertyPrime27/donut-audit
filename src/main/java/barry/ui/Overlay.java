@@ -20,7 +20,16 @@ public final class Overlay {
     private static volatile boolean lastToggleState = false;
     private static volatile boolean lastPanicState = false;
     private static volatile boolean lastProbeState = false;
+    private static volatile boolean lastMenuState = false;
+    private static volatile boolean lastSettingsState = false;
+    private static volatile boolean lastMenuUp = false;
+    private static volatile boolean lastMenuDown = false;
+    private static volatile boolean lastMenuToggleItem = false;
     private static volatile boolean diagLogged = false;
+
+    // Rebind capture: snapshot of keys held when capture began (ignored until
+    // released) so we don't grab the key that started the capture.
+    private static volatile boolean[] heldSnapshot;
 
     private Overlay() {}
 
@@ -63,6 +72,8 @@ public final class Overlay {
 
     public static void panic() {
         VISIBLE.set(false);
+        FilterMenu.close();
+        SettingsMenu.close();
     }
 
     private static void tickLoop() {
@@ -85,8 +96,8 @@ public final class Overlay {
         // Poll keyboard state via LWJGL or AWT
         try {
             KeybindRegistry kb = KeybindRegistry.get();
-            boolean panicDown = isKeyPressed(kb.keyFor(Action.PANIC));
-            boolean toggleDown = isKeyPressed(kb.keyFor(Action.OVERLAY_TOGGLE));
+            boolean panicDown = isActionPressed(Action.PANIC);
+            boolean toggleDown = isActionPressed(Action.OVERLAY_TOGGLE);
 
             // Panic fires on key-down, even when overlay is closed
             if (panicDown && !lastPanicState) {
@@ -100,16 +111,73 @@ public final class Overlay {
             if (toggleDown && !lastToggleState) {
                 boolean now = !VISIBLE.get();
                 VISIBLE.set(now);
+                if (!now) { FilterMenu.close(); SettingsMenu.close(); } // hide menus when overlay goes off
                 System.err.println("[barry] Overlay " + (now ? "ON" : "OFF"));
             }
             lastToggleState = toggleDown;
 
             // HOME triggers the one-shot block-source probe (version discovery).
-            boolean probeDown = isKeyPressed(kb.keyFor(Action.CONFIG_DUMP));
+            boolean probeDown = isActionPressed(Action.CONFIG_DUMP);
             if (probeDown && !lastProbeState) {
                 barry.xray.BlockSourceProbe.dumpOnce();
             }
             lastProbeState = probeDown;
+
+            // Filter menu (M) and key-settings menu (K) — mutually exclusive,
+            // only while the overlay is visible.
+            boolean filterKey = isActionPressed(Action.FILTER_MENU);
+            if (filterKey && !lastMenuState && VISIBLE.get()) {
+                SettingsMenu.close();
+                FilterMenu.toggleOpen();
+            }
+            lastMenuState = filterKey;
+
+            boolean settingsKey = isActionPressed(Action.SETTINGS_MENU);
+            if (settingsKey && !lastSettingsState && VISIBLE.get()) {
+                FilterMenu.close();
+                SettingsMenu.toggleOpen();
+            }
+            lastSettingsState = settingsKey;
+
+            // Shared UP/DOWN/RIGHT navigation, dispatched to whichever menu is open.
+            if (FilterMenu.isOpen() || SettingsMenu.isOpen()) {
+                boolean up = isActionPressed(Action.MENU_UP);
+                boolean dn = isActionPressed(Action.MENU_DOWN);
+                boolean tg = isActionPressed(Action.MENU_TOGGLE_ITEM);
+                boolean upEdge = up && !lastMenuUp;
+                boolean dnEdge = dn && !lastMenuDown;
+                boolean tgEdge = tg && !lastMenuToggleItem;
+
+                if (SettingsMenu.isCapturing()) {
+                    // navigation suspended while capturing a key
+                } else if (FilterMenu.isOpen()) {
+                    if (upEdge) FilterMenu.up();
+                    if (dnEdge) FilterMenu.down();
+                    if (tgEdge) FilterMenu.toggleSelected();
+                } else if (SettingsMenu.isOpen()) {
+                    if (upEdge) SettingsMenu.up();
+                    if (dnEdge) SettingsMenu.down();
+                    if (tgEdge) { SettingsMenu.beginCapture(); captureStart(); }
+                }
+                lastMenuUp = up; lastMenuDown = dn; lastMenuToggleItem = tg;
+            } else {
+                lastMenuUp = lastMenuDown = lastMenuToggleItem = false;
+            }
+
+            // Rebind capture: Esc cancels; otherwise the first newly-pressed key wins.
+            if (SettingsMenu.isCapturing()) {
+                if (sdlPressed(41)) { // SDL_SCANCODE_ESCAPE
+                    SettingsMenu.endCapture();
+                } else {
+                    int sc = captureScan();
+                    if (sc >= 0) {
+                        Action a = SettingsMenu.selectedAction();
+                        kb.setSdlOverride(a, sc);
+                        SettingsMenu.endCapture();
+                        System.err.println("[barry] rebound " + a.name() + " -> " + scancodeName(sc) + " (SDL " + sc + ")");
+                    }
+                }
+            }
         } catch (Throwable ignored) {}
 
         // If visible, schedule render work on the game thread
@@ -137,6 +205,10 @@ public final class Overlay {
             case 266: return 75; // PAGE_UP
             case 269: return 77; // END
             case 268: return 74; // HOME
+            case 77:  return 16; // M  (filter menu)
+            case 265: return 82; // UP arrow
+            case 264: return 81; // DOWN arrow
+            case 262: return 79; // RIGHT arrow
             default:  return -1;
         }
     }
@@ -150,6 +222,95 @@ public final class Overlay {
             if (!diagLogged) { System.err.println("[barry] diag: isKeyPressed error: " + t); diagLogged = true; }
         }
         return false;
+    }
+
+    // Poll an action, honoring a raw SDL-scancode override set via the rebind menu.
+    private static boolean isActionPressed(Action a) {
+        if (backend == Backend.UNKNOWN) backend = detectBackend();
+        try {
+            if (backend == Backend.SDL) return sdlPressed(effectiveScancode(a));
+            if (backend == Backend.GLFW) return glfwPressed(KeybindRegistry.get().keyFor(a));
+        } catch (Throwable t) {
+            if (!diagLogged) { System.err.println("[barry] diag: isActionPressed error: " + t); diagLogged = true; }
+        }
+        return false;
+    }
+
+    // Effective SDL scancode for an action: the override if set, else the
+    // translation of the default GLFW binding.
+    private static int effectiveScancode(Action a) {
+        Integer ov = KeybindRegistry.get().sdlOverride(a);
+        return (ov != null) ? ov : glfwToSdlScancode(KeybindRegistry.get().keyFor(a));
+    }
+
+    // Public label for a key, for the settings panel.
+    public static String keyLabel(Action a) {
+        int sc = effectiveScancode(a);
+        return sc < 0 ? "(unset)" : scancodeName(sc);
+    }
+
+    // --- rebind capture (SDL) ---
+    private static java.nio.ByteBuffer keyboardBuffer() throws Exception {
+        if (cachedGetKeyboardState == null) {
+            Class<?> sdlKb = findSdlKeyboardClass();
+            if (sdlKb == null) return null;
+            cachedGetKeyboardState = sdlKb.getMethod("SDL_GetKeyboardState");
+        }
+        Object buf = cachedGetKeyboardState.invoke(null);
+        return (buf instanceof java.nio.ByteBuffer bb) ? bb : null;
+    }
+
+    private static void captureStart() {
+        try {
+            java.nio.ByteBuffer bb = keyboardBuffer();
+            if (bb == null) { heldSnapshot = null; return; }
+            boolean[] snap = new boolean[bb.limit()];
+            for (int i = 0; i < bb.limit(); i++) snap[i] = bb.get(i) != 0;
+            heldSnapshot = snap;
+        } catch (Throwable ignored) { heldSnapshot = null; }
+    }
+
+    // Returns the first scancode that is newly pressed (not held when capture
+    // began), or -1. Keys held at start become eligible once released.
+    private static int captureScan() {
+        try {
+            java.nio.ByteBuffer bb = keyboardBuffer();
+            if (bb == null) return -1;
+            boolean[] snap = heldSnapshot;
+            for (int i = 4; i < bb.limit(); i++) {
+                boolean down = bb.get(i) != 0;
+                if (down) {
+                    if (i == 41) continue; // Esc handled as cancel
+                    if (snap != null && i < snap.length && snap[i]) continue; // still-held start key
+                    return i;
+                } else if (snap != null && i < snap.length) {
+                    snap[i] = false; // released -> now eligible
+                }
+            }
+        } catch (Throwable ignored) {}
+        return -1;
+    }
+
+    private static String scancodeName(int sc) {
+        if (sc >= 4 && sc <= 29) return String.valueOf((char) ('A' + (sc - 4)));
+        if (sc >= 30 && sc <= 38) return String.valueOf((char) ('1' + (sc - 30)));
+        if (sc == 39) return "0";
+        if (sc >= 58 && sc <= 69) return "F" + (sc - 57);
+        switch (sc) {
+            case 40: return "Enter";  case 41: return "Esc";    case 42: return "Backspace";
+            case 43: return "Tab";    case 44: return "Space";  case 45: return "-";
+            case 46: return "=";      case 47: return "[";      case 48: return "]";
+            case 49: return "\\";     case 51: return ";";      case 52: return "'";
+            case 53: return "`";      case 54: return ",";      case 55: return ".";
+            case 56: return "/";      case 57: return "CapsLock";
+            case 73: return "Insert"; case 74: return "Home";   case 75: return "PageUp";
+            case 76: return "Delete"; case 77: return "End";    case 78: return "PageDown";
+            case 79: return "Right";  case 80: return "Left";   case 81: return "Down";
+            case 82: return "Up";
+            case 224: return "LCtrl"; case 225: return "LShift";case 226: return "LAlt";
+            case 228: return "RCtrl"; case 229: return "RShift";case 230: return "RAlt";
+            default: return "SDL#" + sc;
+        }
     }
 
     private static Backend detectBackend() {
