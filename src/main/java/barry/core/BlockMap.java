@@ -61,7 +61,11 @@ public final class BlockMap {
             }
         }
 
-        // Stats
+        if (old != null) {
+            if (old.isGroundTruth()) groundTruthCount.decrementAndGet();
+            else if (old.source() != BlockConfidence.Source.UNKNOWN) statisticalCount.decrementAndGet();
+            else unknownCount.decrementAndGet();
+        }
         if (conf.isGroundTruth()) groundTruthCount.incrementAndGet();
         else if (conf.source() != BlockConfidence.Source.UNKNOWN) statisticalCount.incrementAndGet();
         else unknownCount.incrementAndGet();
