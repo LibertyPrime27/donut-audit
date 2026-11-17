@@ -51,10 +51,10 @@ M7,PanicHandler,enterPanic timing,STUB,Never executed against a real client
 M7,PanicHandler,recovery transition,STUB,Never executed
 M7,KeybindRegistry,bind/conflict,UNVERIFIED,Logic written but no live key input
 M8,ClassHygiene,string scrub,PASS,scrub() ran during eject on live JVM
-M8,ClassHygiene,thread rename,FAIL,barry-tick thread name exposed before sanitize ran (fixed: now uses vanilla name from creation)
+M8,ClassHygiene,thread rename,PASS,Thread uses vanilla name from creation — check passes on fresh attach
 M8,ClassHygiene,selfCheck,FAIL,barry classes findable via system classloader (inherent to instrument loading)
 M8,ConfigScramble,XOR ops,PASS,init() and wipe() ran during attach/eject cycle
-M8,SelfCheck,runAll,PASS,"5 checks ran: agent_visibility OK, heap_exposure OK, remap_state OK, classloader_isolation FAIL, thread_names FAIL"
+M8,SelfCheck,runAll,PASS,"5 checks ran: 4/5 OK (classloader_isolation FAIL — inherent to instrument loading)"
 M9,PrngOracle,xorshift math,UNVERIFIED,Compiles but not tested against Paper output
 M9,PrngOracle,crackSeed parallel,STUB,Never executed against real chunk data
 M9,PrngOracle,identifyFakes,STUB,Never executed against real chunk data
