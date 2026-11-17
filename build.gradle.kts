@@ -5,6 +5,14 @@ plugins {
 group = "barry"
 version = "0.1.0"
 
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation("org.ow2.asm:asm:9.7")
+}
+
 java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(25)

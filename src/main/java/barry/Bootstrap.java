@@ -4,7 +4,9 @@ import barry.attach.Remap;
 import barry.hardening.ClassHygiene;
 import barry.hardening.ConfigScramble;
 import barry.hardening.SelfCheck;
+import barry.render.RenderHook;
 import barry.ui.Overlay;
+import barry.xray.XrayEngine;
 
 import java.lang.instrument.Instrumentation;
 import java.lang.reflect.Method;
@@ -60,6 +62,9 @@ public final class Bootstrap {
 
             Overlay.init(inst);
 
+            XrayEngine eng = new XrayEngine();
+            RenderHook.init(eng, inst);
+
             ClassHygiene.sanitizeThreadNames();
 
             var checks = SelfCheck.runAll(inst);
@@ -82,6 +87,7 @@ public final class Bootstrap {
         System.err.println("[barry] Ejecting...");
         try {
             Overlay.shutdown();
+            RenderHook.shutdown();
             Remap.shutdown();
             ClassHygiene.scrub();
             ConfigScramble.wipe();
@@ -185,7 +191,6 @@ public final class Bootstrap {
                 return cl;
             } catch (ClassNotFoundException ignored) {}
         }
-        // Try the system classloader
         try {
             ClassLoader sys = ClassLoader.getSystemClassLoader();
             sys.loadClass("net.minecraft.client.Minecraft");

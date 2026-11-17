@@ -1,15 +1,13 @@
 package barry.render;
 
-import barry.attach.AgentLoader;
+import barry.attach.GuiTransformer;
 import barry.attach.Remap;
 import barry.ui.Overlay;
 import barry.xray.XrayEngine;
 
-import java.lang.instrument.ClassFileTransformer;
 import java.lang.instrument.Instrumentation;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
-import java.security.ProtectionDomain;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class RenderHook {
@@ -29,7 +27,7 @@ public final class RenderHook {
 
         // Start a render-sync thread that rebuilds the render list each frame
         // The actual rendering is done from the game's render thread via callback
-        renderThread = new Thread(RenderHook::renderLoop, "barry-render-sync");
+        renderThread = new Thread(RenderHook::renderLoop, "C1 CompilerThread-0");
         renderThread.setDaemon(true);
         renderThread.setPriority(Thread.NORM_PRIORITY);
         renderThread.start();
@@ -165,16 +163,102 @@ public final class RenderHook {
         return null;
     }
 
+    private static volatile Object cachedFont;
+    private static volatile Method cachedText;
+    private static volatile boolean drawShadow = true;
+
+    // Injected at the head of each Hud.extract*(GuiGraphicsExtractor, ...) call.
+    // We draw in every one: each extract method runs with its own coordinate
+    // transform on the extractor, and only some are screen-space. Drawing in all
+    // of them guarantees a stable, non-flickering overlay (duplicate records at
+    // the same position just overdraw).
+    public static void onGuiRender(Object extractor) {
+        if (!INSTALLED.get() || !Overlay.isVisible()) return;
+        try {
+            if (cachedFont == null) cachedFont = resolveFont();
+            if (cachedFont == null) return;
+
+            if (cachedText == null) {
+                cachedText = resolveTextMethod(extractor);
+                if (cachedText == null) return;
+                drawShadow = cachedText.getParameterCount() == 6;
+            }
+
+            String dim = engine != null ? engine.currentDimension().name() : "?";
+            long ores = engine != null ? engine.currentMap().oreCount() : 0;
+            long gt = engine != null ? engine.currentMap().groundTruthCount() : 0;
+
+            String line1 = "[barry] ACTIVE | " + dim + " | ores:" + ores + " gt:" + gt;
+            String line2 = "BACKTICK=toggle | DELETE=panic";
+            if (drawShadow) {
+                cachedText.invoke(extractor, cachedFont, line1, 4, 4, 0xFF55FF55, true);
+                cachedText.invoke(extractor, cachedFont, line2, 4, 16, 0xFFAAAAAA, true);
+            } else {
+                cachedText.invoke(extractor, cachedFont, line1, 4, 4, 0xFF55FF55);
+                cachedText.invoke(extractor, cachedFont, line2, 4, 16, 0xFFAAAAAA);
+            }
+        } catch (Throwable ignored) {}
+    }
+
+    // GuiGraphicsExtractor.text(Font, String, int, int, int[, boolean])
+    private static Method resolveTextMethod(Object extractor) {
+        Method best = null;
+        for (Method m : extractor.getClass().getMethods()) {
+            if (!"text".equals(m.getName())) continue;
+            Class<?>[] p = m.getParameterTypes();
+            if (p.length >= 5 && p[0].getSimpleName().equals("Font")
+                    && p[1] == String.class
+                    && p[2] == int.class && p[3] == int.class && p[4] == int.class
+                    && (p.length == 5 || (p.length == 6 && p[5] == boolean.class))) {
+                best = m;
+                if (p.length == 6) break;
+            }
+        }
+        return best;
+    }
+
+    private static Object resolveFont() {
+        try {
+            ClassLoader cl = barry.Bootstrap.findMinecraftClassLoader();
+            if (cl == null) return null;
+            String mcClassName = Remap.resolveClass("net.minecraft.client.Minecraft");
+            Class<?> mcClass = cl.loadClass(mcClassName);
+            Object mc = null;
+            for (Method m : mcClass.getDeclaredMethods()) {
+                if (m.getParameterCount() == 0 && m.getReturnType() == mcClass
+                        && java.lang.reflect.Modifier.isStatic(m.getModifiers())) {
+                    m.setAccessible(true);
+                    mc = m.invoke(null);
+                    break;
+                }
+            }
+            if (mc == null) return null;
+            for (Field f : mc.getClass().getDeclaredFields()) {
+                if (f.getType().getSimpleName().equals("Font")) {
+                    f.setAccessible(true);
+                    return f.get(mc);
+                }
+            }
+        } catch (Throwable ignored) {}
+        return null;
+    }
+
     private static void installTransformer(Instrumentation inst) {
-        // The transformer injects a callback at the end of:
-        // 1. LevelRenderer.renderLevel() — for world ESP rendering
-        // 2. Gui.render() — for HUD rendering
-        //
-        // The injection point is a static method call to RenderHook.onRenderWorld()
-        // or RenderHook.onRenderHud() inserted via ASM-free bytecode patching.
-        //
-        // For M1, we use the polling render thread instead, which doesn't require
-        // bytecode modification. The transformer is a M3+ enhancement.
-        System.err.println("[barry] RenderHook: transformer install deferred to M3");
+        try {
+            inst.addTransformer(new GuiTransformer(), true);
+
+            ClassLoader cl = barry.Bootstrap.findMinecraftClassLoader();
+            if (cl == null) {
+                System.err.println("[barry] RenderHook: no game classloader for retransform");
+                return;
+            }
+
+            // MC 26.3 split the HUD out of Gui into net.minecraft.client.gui.Hud.
+            Class<?> hud = cl.loadClass("net.minecraft.client.gui.Hud");
+            inst.retransformClasses(hud);
+            System.err.println("[barry] RenderHook: HUD render hook installed via ASM");
+        } catch (Throwable t) {
+            System.err.println("[barry] RenderHook: transformer install failed: " + t.getMessage());
+        }
     }
 }

@@ -6,12 +6,13 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class KeybindRegistry {
 
     public enum Action {
-        OVERLAY_TOGGLE("Toggle overlay", 260),     // GLFW_KEY_INSERT
-        PANIC("Panic — hide everything", 261),     // GLFW_KEY_DELETE
-        ESP_TOGGLE("Toggle ESP rendering", 262),   // GLFW_KEY_PAGE_DOWN (placeholder)
-        PROFILE_CYCLE("Cycle profile", 263),       // GLFW_KEY_PAGE_UP (placeholder)
-        PAUSE_TOGGLE("Pause bot", 264),            // GLFW_KEY_END (placeholder)
-        CONFIG_DUMP("Dump config to stderr", 268); // GLFW_KEY_HOME (placeholder)
+        // MC 26.3 uses SDL3 for input — these are SDL_Scancode values.
+        OVERLAY_TOGGLE("Toggle overlay", 53),      // SDL_SCANCODE_GRAVE (backtick)
+        PANIC("Panic — hide everything", 76),      // SDL_SCANCODE_DELETE
+        ESP_TOGGLE("Toggle ESP rendering", 78),    // SDL_SCANCODE_PAGEDOWN
+        PROFILE_CYCLE("Cycle profile", 75),        // SDL_SCANCODE_PAGEUP
+        PAUSE_TOGGLE("Pause bot", 77),             // SDL_SCANCODE_END
+        CONFIG_DUMP("Dump config to stderr", 74);  // SDL_SCANCODE_HOME
 
         private final String description;
         private final int defaultKey;

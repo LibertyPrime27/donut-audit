@@ -12,8 +12,8 @@ M0,Bootstrap,agentmain entry,PASS,Runs on attach to MC 26.3 singleplayer
 M0,Bootstrap,class version gate,PASS,MC 26.3 runs Java 21+ — gate passed
 M0,Bootstrap,eject path,PASS,"Ejecting... Overlay shutdown. Ejected cleanly."
 M0,Remap,Mojmap probe,PASS,"Client uses Mojmap names. No remapping needed."
-M0,Overlay,GLFW key polling,STUB,INSERT pressed — no visible output (renderOverlay is stub)
-M0,Overlay,key-down edge detect,STUB,Cannot verify — render path is stub
+M0,Overlay,SDL key polling,PASS,"MC 26.3 uses SDL3 not GLFW; SDL_GetKeyboardState + scancode 53 (backtick) toggles overlay live"
+M0,Overlay,key-down edge detect,PASS,Backtick edge-toggles overlay ON/OFF on MC 26.3 singleplayer
 M1,BlockMap,put/get,UNVERIFIED,Compiles but no unit test
 M1,BlockMap,orePositions index,UNVERIFIED,Compiles but no unit test
 M1,ChunkDiff,temporal differencing,UNVERIFIED,Logic written but no test data
@@ -26,8 +26,10 @@ M1,XrayEngine,routing,STUB,Never executed
 M1,PacketHook,position polling,STUB,Never executed (no game instance)
 M1,EspRenderer,buildRenderList,UNVERIFIED,Compiles but no BlockMap data
 M1,EspRenderer,GL rendering,STUB,renderWireBox is a skeleton
-M1,HudRenderer,text rendering,STUB,Requires GuiGraphics and Font
-M1,RenderHook,render loop,UNVERIFIED,Thread starts but never renders
+M1,HudRenderer,text rendering,PASS,"HUD text drawn live on MC 26.3 via GuiGraphicsExtractor.text(Font,String,...) through ASM hook"
+M1,RenderHook,render loop,PASS,"ASM hook into Hud.extract*(GuiGraphicsExtractor) draws stable overlay each frame on MC 26.3"
+M1,GuiTransformer,ASM v69 workaround,PASS,"ASM 9.7 rejects class v69 (Java 25); patch major 69->67 for read then restore in output — transform applies on MC 26.3"
+M1,GuiTransformer,retransform classes,PASS,"inst.retransformClasses(Hud) swaps live bytecode; probe confirmed on MC 26.3"
 M2,seed_verdict,skipped,PASS,Documented in DECISIONS.md §11
 M3,Planner,nextTask spiral,UNVERIFIED,Logic written but no live BlockMap
 M3,Executor,executionLoop,STUB,Never executed (no game instance)

@@ -632,3 +632,51 @@ diff requires 2+ chunk sends; PRNG oracle works from a single observation.
 They can run simultaneously: if chunk diff has ≥2 snapshots, use it; if
 only one snapshot exists, try the PRNG oracle. Both feed into the same
 BlockMap confidence system.
+
+## 14. MC 26.3 Render + Input Architecture (Verified Live)
+
+Making the overlay actually draw on MC 26.3 surfaced three hard breaks from
+older versions. All three are verified live on 26.3 singleplayer.
+
+### 14.1 Input: SDL3, not GLFW
+26.3 drives windowing/input through **LWJGL-SDL3**, not GLFW. There is no
+`org.lwjgl.glfw.GLFW` class loaded at all — the loaded classes are
+`org.lwjgl.sdl.*`. Key state comes from
+`org.lwjgl.sdl.SDLKeyboard.SDL_GetKeyboardState()` which returns a
+`ByteBuffer` indexed by **SDL scancode** (nonzero = down). Keybinds are now
+SDL_Scancode values (backtick = 53, Delete = 76, etc.), not GLFW key codes.
+
+`SDLKeyboard` is not loaded until something references it (MC uses SDL
+events, not the state array), so we force-load it: find any loaded
+`org.lwjgl.sdl.*` class via `Instrumentation.getAllLoadedClasses()`, take its
+classloader, and `Class.forName("org.lwjgl.sdl.SDLKeyboard", true, loader)`.
+
+### 14.2 ASM can't read Java 25 class files (v69)
+26.3 runs on Java 25, so its classes are version 69. ASM 9.7's `ClassReader`
+rejects anything above v67. Workaround: before `new ClassReader(buf)`, patch
+bytes 6–7 (major version) from 69 down to 67; after `cw.toByteArray()`, patch
+the output's bytes 6–7 back to 69. The class format is otherwise identical,
+so ASM reads/writes it correctly — the version is only a gate.
+
+### 14.3 Rendering: retained-mode GuiGraphicsExtractor
+The HUD no longer renders immediately via `Gui.render(GuiGraphics)`. 26.3:
+- The HUD moved out of `Gui` into **`net.minecraft.client.gui.Hud`**.
+- Each frame, `Gui.extractRenderState(DeltaTracker, ...)` calls the individual
+  `Hud.extract*(GuiGraphicsExtractor, ...)` methods directly (NOT via a single
+  `Hud.extractRenderState` — that exists but isn't on the hot path).
+- `GuiGraphicsExtractor` is the recording API. Text is
+  `text(Font, String, int, int, int[, boolean])` (not `drawString`); there are
+  also `fill`, `blit`, `blitSprite`, `centeredText`, `textWithBackdrop`, etc.
+  Calls record into a `GuiRenderState` that a GpU renderer submits later.
+
+Hook strategy: ASM-inject a call to `RenderHook.onGuiRender(extractor)` at the
+ENTRY of every `Hud.extract*(GuiGraphicsExtractor, ...)` method, then record
+our text through that extractor. We draw in *all* of them: each extract method
+runs with its own coordinate transform on the extractor, so drawing in only
+one (e.g. via a per-frame throttle) flickers — the chosen method alternates
+between screen-space and transformed contexts. Drawing in every extract call
+pins the overlay to screen space every frame (duplicate records at the same
+position just overdraw). Verified: stable, no flicker.
+
+`retransformClasses` on the already-loaded `Hud` works (confirmed with a
+`tick()` probe) — the redefinition swaps the live method bytecode.
