@@ -12,6 +12,10 @@ public final class HudRenderer {
     private volatile boolean showDebris = true;
     private volatile boolean showDiamonds = true;
 
+    private volatile Object cachedMc;
+    private volatile Object cachedFont;
+    private volatile java.lang.reflect.Method cachedDrawString;
+
     public HudRenderer(XrayEngine engine) {
         this.engine = engine;
     }
@@ -56,50 +60,53 @@ public final class HudRenderer {
     }
 
     private void renderText(Object guiGraphics, String text, int x, int y, int color) throws Exception {
-        ClassLoader cl = barry.Bootstrap.findMinecraftClassLoader();
-        if (cl == null) return;
-
         if (guiGraphics == null) return;
 
-        // GuiGraphics.drawString(Font, String, int, int, int)
-        // We need the Font from Minecraft.font
-        String mcClassName = barry.attach.Remap.resolveClass("net.minecraft.client.Minecraft");
-        Class<?> mcClass = cl.loadClass(mcClassName);
+        if (cachedMc == null) {
+            ClassLoader cl = barry.Bootstrap.findMinecraftClassLoader();
+            if (cl == null) return;
 
-        Object mc = null;
-        for (java.lang.reflect.Method m : mcClass.getDeclaredMethods()) {
-            if (m.getParameterCount() == 0 && m.getReturnType() == mcClass
-                    && java.lang.reflect.Modifier.isStatic(m.getModifiers())) {
-                m.setAccessible(true);
-                mc = m.invoke(null);
-                break;
+            String mcClassName = barry.attach.Remap.resolveClass("net.minecraft.client.Minecraft");
+            Class<?> mcClass = cl.loadClass(mcClassName);
+
+            for (java.lang.reflect.Method m : mcClass.getDeclaredMethods()) {
+                if (m.getParameterCount() == 0 && m.getReturnType() == mcClass
+                        && java.lang.reflect.Modifier.isStatic(m.getModifiers())) {
+                    m.setAccessible(true);
+                    cachedMc = m.invoke(null);
+                    break;
+                }
             }
         }
-        if (mc == null) return;
+        if (cachedMc == null) return;
 
-        // Find font field
-        Object font = null;
-        for (java.lang.reflect.Field f : mc.getClass().getDeclaredFields()) {
-            if (f.getType().getSimpleName().contains("Font")) {
-                f.setAccessible(true);
-                font = f.get(mc);
-                break;
+        if (cachedFont == null) {
+            for (java.lang.reflect.Field f : cachedMc.getClass().getDeclaredFields()) {
+                if (f.getType().getSimpleName().contains("Font")) {
+                    f.setAccessible(true);
+                    cachedFont = f.get(cachedMc);
+                    break;
+                }
             }
         }
-        if (font == null) return;
+        if (cachedFont == null) return;
 
-        // Call drawString
-        for (java.lang.reflect.Method m : guiGraphics.getClass().getDeclaredMethods()) {
-            Class<?>[] params = m.getParameterTypes();
-            if (params.length == 5 && params[0] == font.getClass()
-                    && params[1] == String.class
-                    && params[2] == int.class && params[3] == int.class
-                    && params[4] == int.class) {
-                m.setAccessible(true);
-                m.invoke(guiGraphics, font, text, x, y, color);
-                return;
+        if (cachedDrawString == null) {
+            for (java.lang.reflect.Method m : guiGraphics.getClass().getDeclaredMethods()) {
+                Class<?>[] params = m.getParameterTypes();
+                if (params.length == 5 && params[0] == cachedFont.getClass()
+                        && params[1] == String.class
+                        && params[2] == int.class && params[3] == int.class
+                        && params[4] == int.class) {
+                    m.setAccessible(true);
+                    cachedDrawString = m;
+                    break;
+                }
             }
         }
+        if (cachedDrawString == null) return;
+
+        cachedDrawString.invoke(guiGraphics, cachedFont, text, x, y, color);
     }
 
     public void setShowStats(boolean show) { this.showStats = show; }

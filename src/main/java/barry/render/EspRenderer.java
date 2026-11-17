@@ -13,6 +13,7 @@ public final class EspRenderer {
 
     private final XrayEngine engine;
     private volatile boolean enabled = true;
+    private volatile ClassLoader cachedClassLoader;
 
     // Render settings
     private float confidenceFloor = 0.5f;
@@ -117,7 +118,8 @@ public final class EspRenderer {
     private void renderBoxes(Object poseStack, Object bufferSource,
                               double camX, double camY, double camZ,
                               List<RenderEntry> entries) throws Exception {
-        ClassLoader cl = barry.Bootstrap.findMinecraftClassLoader();
+        if (cachedClassLoader == null) cachedClassLoader = barry.Bootstrap.findMinecraftClassLoader();
+        ClassLoader cl = cachedClassLoader;
         if (cl == null) return;
 
         // Get RenderSystem class for GL state
