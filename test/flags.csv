@@ -6,14 +6,14 @@ M0,build.gradle,class version,PASS,major version 65 (Java 21) verified via javap
 M0,build.gradle,manifest,PASS,Agent-Class and Premain-Class set to barry.Bootstrap
 M0,jattach,binary runs,PASS,jattach.exe 2.2 prints usage on Windows
 M0,run.ps1,list command,PASS,Enumerates JVMs via java --add-modules jdk.attach
-M0,run.ps1,attach path,STUB,Requires running MC client — not tested
-M0,run.ps1,eject path,STUB,Requires running MC client — not tested
-M0,Bootstrap,agentmain entry,STUB,Never executed (no attach)
-M0,Bootstrap,class version gate,STUB,Never executed (no attach)
-M0,Bootstrap,eject path,STUB,Never executed (no attach)
-M0,Remap,Mojmap probe,STUB,Never executed (no game classloader)
-M0,Overlay,GLFW key polling,STUB,Never executed (no GLFW context)
-M0,Overlay,key-down edge detect,STUB,Never executed (no GLFW context)
+M0,run.ps1,attach path,PASS,jattach loads agent into MC 26.3 (JVM response 0)
+M0,run.ps1,eject path,PASS,jattach reloads agent with eject arg — clean shutdown
+M0,Bootstrap,agentmain entry,PASS,Runs on attach to MC 26.3 singleplayer
+M0,Bootstrap,class version gate,PASS,MC 26.3 runs Java 21+ — gate passed
+M0,Bootstrap,eject path,PASS,"Ejecting... Overlay shutdown. Ejected cleanly."
+M0,Remap,Mojmap probe,PASS,"Client uses Mojmap names. No remapping needed."
+M0,Overlay,GLFW key polling,STUB,INSERT pressed — no visible output (renderOverlay is stub)
+M0,Overlay,key-down edge detect,STUB,Cannot verify — render path is stub
 M1,BlockMap,put/get,UNVERIFIED,Compiles but no unit test
 M1,BlockMap,orePositions index,UNVERIFIED,Compiles but no unit test
 M1,ChunkDiff,temporal differencing,UNVERIFIED,Logic written but no test data
@@ -50,16 +50,16 @@ M7,StaffDetector,hysteresis,UNVERIFIED,Logic written but no signal data
 M7,PanicHandler,enterPanic timing,STUB,Never executed against a real client
 M7,PanicHandler,recovery transition,STUB,Never executed
 M7,KeybindRegistry,bind/conflict,UNVERIFIED,Logic written but no live key input
-M8,ClassHygiene,string scrub,STUB,scrub() never called with live strings
-M8,ClassHygiene,thread rename,STUB,sanitizeThreadNames never ran against game threads
-M8,ClassHygiene,selfCheck,STUB,Never ran in an attached context
-M8,ConfigScramble,XOR ops,UNVERIFIED,Math compiles but no round-trip test
-M8,SelfCheck,runAll,STUB,Never ran against a live JVM
+M8,ClassHygiene,string scrub,PASS,scrub() ran during eject on live JVM
+M8,ClassHygiene,thread rename,FAIL,barry-tick thread name exposed before sanitize ran (fixed: now uses vanilla name from creation)
+M8,ClassHygiene,selfCheck,FAIL,barry classes findable via system classloader (inherent to instrument loading)
+M8,ConfigScramble,XOR ops,PASS,init() and wipe() ran during attach/eject cycle
+M8,SelfCheck,runAll,PASS,"5 checks ran: agent_visibility OK, heap_exposure OK, remap_state OK, classloader_isolation FAIL, thread_names FAIL"
 M9,PrngOracle,xorshift math,UNVERIFIED,Compiles but not tested against Paper output
 M9,PrngOracle,crackSeed parallel,STUB,Never executed against real chunk data
 M9,PrngOracle,identifyFakes,STUB,Never executed against real chunk data
 M9,PrngOracle,analyzeSection,STUB,Never executed (no solidMask or preset data)
-M9,injector.exe,list command,PASS,Enumerates JVMs correctly
-M9,injector.exe,attach path,STUB,Requires running MC client
-M9,injector.exe,eject path,STUB,Requires running MC client
+M9,injector.exe,list command,PASS,Found MC 26.3 PID 31968 with display name filtering
+M9,injector.exe,attach path,PASS,Attached to MC 26.3 — JVM response 0
+M9,injector.exe,eject path,PASS,Ejected from MC 26.3 — clean shutdown confirmed in log
 M9,injector.exe,resource extraction,PASS,JAR and jattach extracted to temp and cleaned up
