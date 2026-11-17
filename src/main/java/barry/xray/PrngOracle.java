@@ -91,6 +91,7 @@ public final class PrngOracle {
                     boolean match = true;
                     for (int expected : observedSeq) {
                         state = xorshift(state);
+                        if (expected < 0) continue;
                         int idx = presetIndex(state, pLen);
                         if (idx != expected) {
                             match = false;
