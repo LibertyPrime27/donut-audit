@@ -79,37 +79,40 @@ public final class PrngOracle {
         AtomicReference<Integer> found = new AtomicReference<>(null);
 
         ExecutorService pool = Executors.newFixedThreadPool(cores);
-        List<Future<?>> futures = new ArrayList<>();
+        try {
+            List<Future<?>> futures = new ArrayList<>();
 
-        for (int t = 0; t < cores; t++) {
-            long start = (long) t * chunkSize + 1;
-            long end = Math.min(start + chunkSize - 1, total);
-            futures.add(pool.submit(() -> {
-                for (long s = start; s <= end; s++) {
-                    if (found.get() != null) return;
-                    int state = (int) s;
-                    boolean match = true;
-                    for (int expected : observedSeq) {
-                        state = xorshift(state);
-                        if (expected < 0) continue;
-                        int idx = presetIndex(state, pLen);
-                        if (idx != expected) {
-                            match = false;
-                            break;
+            for (int t = 0; t < cores; t++) {
+                long start = (long) t * chunkSize + 1;
+                long end = Math.min(start + chunkSize - 1, total);
+                futures.add(pool.submit(() -> {
+                    for (long s = start; s <= end; s++) {
+                        if (found.get() != null) return;
+                        int state = (int) s;
+                        boolean match = true;
+                        for (int expected : observedSeq) {
+                            state = xorshift(state);
+                            if (expected < 0) continue;
+                            int idx = presetIndex(state, pLen);
+                            if (idx != expected) {
+                                match = false;
+                                break;
+                            }
+                        }
+                        if (match) {
+                            found.compareAndSet(null, (int) s);
+                            return;
                         }
                     }
-                    if (match) {
-                        found.compareAndSet(null, (int) s);
-                        return;
-                    }
-                }
-            }));
-        }
+                }));
+            }
 
-        for (Future<?> f : futures) {
-            try { f.get(); } catch (Exception ignored) {}
+            for (Future<?> f : futures) {
+                try { f.get(); } catch (Exception ignored) {}
+            }
+        } finally {
+            pool.shutdownNow();
         }
-        pool.shutdown();
 
         Integer result = found.get();
         return result != null ? OptionalInt.of(result) : OptionalInt.empty();
