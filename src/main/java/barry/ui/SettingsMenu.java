@@ -13,51 +13,36 @@ public final class SettingsMenu {
         Action.OVERLAY_TOGGLE,
         Action.PANIC,
         Action.FILTER_MENU,
-        Action.SETTINGS_MENU,
         Action.MENU_UP,
         Action.MENU_DOWN,
         Action.MENU_TOGGLE_ITEM,
     };
 
-    private static volatile boolean open;
     private static volatile int selected;
     private static volatile boolean capturing;
 
     private SettingsMenu() {}
 
-    public static boolean isOpen() { return open; }
-    public static boolean isCapturing() { return capturing; }
+    public static boolean isOpen() { return Menu.screen() == Menu.Screen.KEYS; }
+    public static boolean isCapturing() { return capturing && isOpen(); }
     public static int selected() { return selected; }
 
     public static Action selectedAction() {
         return ACTIONS[Math.max(0, Math.min(selected, ACTIONS.length - 1))];
     }
 
-    public static void toggleOpen() {
-        open = !open;
-        capturing = false;
-        if (open) clamp();
-    }
-
-    public static void close() { open = false; capturing = false; }
-
     public static void up() {
-        if (!open || capturing) return;
+        if (capturing) return;
         int n = ACTIONS.length;
         selected = (selected - 1 + n) % n;
     }
 
     public static void down() {
-        if (!open || capturing) return;
+        if (capturing) return;
         int n = ACTIONS.length;
         selected = (selected + 1) % n;
     }
 
-    public static void beginCapture() { if (open) capturing = true; }
+    public static void beginCapture() { capturing = true; }
     public static void endCapture() { capturing = false; }
-
-    private static void clamp() {
-        if (selected < 0) selected = 0;
-        if (selected >= ACTIONS.length) selected = ACTIONS.length - 1;
-    }
 }

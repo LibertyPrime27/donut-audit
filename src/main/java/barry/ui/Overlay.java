@@ -25,6 +25,7 @@ public final class Overlay {
     private static volatile boolean lastMenuUp = false;
     private static volatile boolean lastMenuDown = false;
     private static volatile boolean lastMenuToggleItem = false;
+    private static volatile boolean lastEsc = false;
     private static volatile boolean diagLogged = false;
 
     // Rebind capture: snapshot of keys held when capture began (ignored until
@@ -74,8 +75,8 @@ public final class Overlay {
 
     public static void panic() {
         VISIBLE.set(false);
-        FilterMenu.close();
-        SettingsMenu.close();
+        Menu.close();
+        Fullbright.set(false); // revert to the vanilla look on panic
     }
 
     private static void tickLoop() {
@@ -113,7 +114,7 @@ public final class Overlay {
             if (toggleDown && !lastToggleState) {
                 boolean now = !VISIBLE.get();
                 VISIBLE.set(now);
-                if (!now) { FilterMenu.close(); SettingsMenu.close(); } // hide menus when overlay goes off
+                if (!now) Menu.close(); // hide menus when overlay goes off
                 System.err.println("[barry] Overlay " + (now ? "ON" : "OFF"));
             }
             lastToggleState = toggleDown;
@@ -125,72 +126,80 @@ public final class Overlay {
             }
             lastProbeState = probeDown;
 
-            // Filter menu (M) and key-settings menu (K) — mutually exclusive,
-            // only while the overlay is visible.
-            boolean filterKey = isActionPressed(Action.FILTER_MENU);
-            if (filterKey && !lastMenuState && VISIBLE.get()) {
-                SettingsMenu.close();
-                FilterMenu.toggleOpen();
-                System.err.println("[barry] FilterMenu " + (FilterMenu.isOpen() ? "OPEN" : "closed")
+            // --- Nested menu (F6 opens MAIN) ---
+            boolean menuKey = isActionPressed(Action.FILTER_MENU);
+            if (menuKey && !lastMenuState && VISIBLE.get()) {
+                Menu.toggleMain();
+                System.err.println("[barry] Menu " + Menu.screen()
                         + " (F6 scancode=" + effectiveScancode(Action.FILTER_MENU) + ")");
             }
-            lastMenuState = filterKey;
+            lastMenuState = menuKey;
 
-            boolean settingsKey = isActionPressed(Action.SETTINGS_MENU);
-            if (settingsKey && !lastSettingsState && VISIBLE.get()) {
-                FilterMenu.close();
-                SettingsMenu.toggleOpen();
-            }
-            lastSettingsState = settingsKey;
-
-            // Shared UP/DOWN/RIGHT navigation, dispatched to whichever menu is open.
-            if (FilterMenu.isOpen() || SettingsMenu.isOpen()) {
+            if (Menu.isOpen()) {
                 boolean up = isActionPressed(Action.MENU_UP);
                 boolean dn = isActionPressed(Action.MENU_DOWN);
-                boolean tg = isActionPressed(Action.MENU_TOGGLE_ITEM);
+                // Activate = RIGHT (bindable) OR LEFT OR ENTER — all select/toggle.
+                boolean tg = isActionPressed(Action.MENU_TOGGLE_ITEM) || sdlPressed(80) || sdlPressed(40);
                 boolean upEdge = up && !lastMenuUp;
                 boolean dnEdge = dn && !lastMenuDown;
                 boolean tgEdge = tg && !lastMenuToggleItem;
 
-                if (SettingsMenu.isCapturing()) {
-                    // navigation suspended while capturing a key
-                } else if (FilterMenu.isOpen()) {
-                    if (upEdge) FilterMenu.up();
-                    if (dnEdge) FilterMenu.down();
-                    if (tgEdge) FilterMenu.toggleSelected();
-                } else if (SettingsMenu.isOpen()) {
-                    if (upEdge) SettingsMenu.up();
-                    if (dnEdge) SettingsMenu.down();
-                    if (tgEdge) { SettingsMenu.beginCapture(); captureStart(); }
+                if (!SettingsMenu.isCapturing()) {
+                    switch (Menu.screen()) {
+                        case MAIN:
+                            if (upEdge) Menu.mainUp();
+                            if (dnEdge) Menu.mainDown();
+                            if (tgEdge) Menu.mainSelect();
+                            break;
+                        case BLOCKS:
+                            if (upEdge) FilterMenu.up();
+                            if (dnEdge) FilterMenu.down();
+                            if (tgEdge) FilterMenu.toggleSelected();
+                            break;
+                        case KEYS:
+                            if (upEdge) SettingsMenu.up();
+                            if (dnEdge) SettingsMenu.down();
+                            if (tgEdge) { SettingsMenu.beginCapture(); captureStart(); }
+                            break;
+                        default: break;
+                    }
                 }
                 lastMenuUp = up; lastMenuDown = dn; lastMenuToggleItem = tg;
+
+                // Esc backs out: cancel a capture, else submenu -> MAIN -> closed.
+                boolean esc = sdlPressed(41);
+                if (esc && !lastEsc) {
+                    if (SettingsMenu.isCapturing()) SettingsMenu.endCapture();
+                    else Menu.back();
+                }
+                lastEsc = esc;
             } else {
                 lastMenuUp = lastMenuDown = lastMenuToggleItem = false;
+                lastEsc = false;
             }
 
-            // Filter search box: type to filter, Backspace to delete, Enter to
-            // toggle the selected block, Esc to close. The input-capture hook keeps
-            // these keys out of the game while the menu is open.
-            if (FilterMenu.isOpen() && !SettingsMenu.isOpen()) {
+            // Block selector search box (only on the BLOCKS screen): type to
+            // filter, Backspace to delete, Enter to toggle. The input-capture hook
+            // keeps these keys out of the game while the menu is open.
+            if (Menu.screen() == Menu.Screen.BLOCKS) {
                 pollSearchInput();
             } else {
                 searchPrev = null;
             }
 
-            // Rebind capture: Esc cancels; otherwise the first newly-pressed key wins.
+            // Rebind capture: the first newly-pressed key wins (Esc handled above).
             if (SettingsMenu.isCapturing()) {
-                if (sdlPressed(41)) { // SDL_SCANCODE_ESCAPE
+                int sc = captureScan();
+                if (sc >= 0 && sc != 41) {
+                    Action a = SettingsMenu.selectedAction();
+                    kb.setSdlOverride(a, sc);
                     SettingsMenu.endCapture();
-                } else {
-                    int sc = captureScan();
-                    if (sc >= 0) {
-                        Action a = SettingsMenu.selectedAction();
-                        kb.setSdlOverride(a, sc);
-                        SettingsMenu.endCapture();
-                        System.err.println("[barry] rebound " + a.name() + " -> " + scancodeName(sc) + " (SDL " + sc + ")");
-                    }
+                    System.err.println("[barry] rebound " + a.name() + " -> " + scancodeName(sc) + " (SDL " + sc + ")");
                 }
             }
+
+            // Keep fullbright asserted while enabled.
+            Fullbright.apply();
         } catch (Throwable ignored) {}
 
         // If visible, schedule render work on the game thread
@@ -225,6 +234,7 @@ public final class Overlay {
             case 265: return 82; // UP arrow
             case 264: return 81; // DOWN arrow
             case 262: return 79; // RIGHT arrow
+            case 263: return 80; // LEFT arrow
             case 257: return 40; // ENTER
             default:  return -1;
         }
@@ -331,9 +341,8 @@ public final class Overlay {
         switch (sc) {
             case 39: FilterMenu.appendChar('0'); break;
             case 42: FilterMenu.backspace(); break;      // Backspace
-            case 40: FilterMenu.toggleSelected(); break; // Enter
-            case 41: FilterMenu.close(); break;          // Esc
-            default: /* arrows, F6, etc. handled elsewhere */ break;
+            // Enter (toggle) and Esc (back) handled in the nav block; arrows/F6 elsewhere.
+            default: break;
         }
     }
 

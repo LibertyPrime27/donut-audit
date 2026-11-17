@@ -14,8 +14,8 @@ public final class KeybindRegistry {
         PROFILE_CYCLE("Cycle profile", 266),       // GLFW_KEY_PAGE_UP
         PAUSE_TOGGLE("Pause bot", 269),            // GLFW_KEY_END
         CONFIG_DUMP("Dump config to stderr", 268), // GLFW_KEY_HOME
-        FILTER_MENU("Toggle filter menu", 295),    // GLFW_KEY_F6 (unused in vanilla)
-        SETTINGS_MENU("Toggle key settings", 75),  // GLFW_KEY_K (reliable opener for rebinding)
+        FILTER_MENU("Open menu", 295),             // GLFW_KEY_F6 (unused in vanilla)
+        SETTINGS_MENU("(unused)", 75),             // GLFW_KEY_K (reserved)
         MENU_UP("Menu: move up", 265),             // GLFW_KEY_UP
         MENU_DOWN("Menu: move down", 264),         // GLFW_KEY_DOWN
         MENU_TOGGLE_ITEM("Menu: toggle / rebind", 262); // GLFW_KEY_RIGHT

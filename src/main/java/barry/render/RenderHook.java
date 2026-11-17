@@ -217,13 +217,41 @@ public final class RenderHook {
                 y += 10;
             }
 
-            // Menu panels (only one open at a time).
-            if (Overlay.isVisible() && barry.ui.FilterMenu.isOpen()) {
-                drawFilterMenu(graphics);
-            } else if (Overlay.isVisible() && barry.ui.SettingsMenu.isOpen()) {
-                drawSettingsMenu(graphics);
+            // Menu panels (one screen at a time).
+            if (Overlay.isVisible()) {
+                switch (barry.ui.Menu.screen()) {
+                    case MAIN:   drawMainMenu(graphics); break;
+                    case BLOCKS: drawFilterMenu(graphics); break;
+                    case KEYS:   drawSettingsMenu(graphics); break;
+                    default: break;
+                }
             }
         } catch (Throwable ignored) {}
+    }
+
+    private static void drawMainMenu(Object graphics) {
+        String[] items = barry.ui.Menu.MAIN_ITEMS;
+        int x = 140, top = 24, w = 220, rowH = 10;
+        int h = (items.length + 2) * rowH + 8;
+        fillRect(graphics, x - 6, top - 6, x + w, top + h, 0xC0101014);
+        fillRect(graphics, x - 6, top - 6, x + w, top - 5, 0xFFFFCC33);
+        fillRect(graphics, x - 6, top + h - 1, x + w, top + h, 0xFFFFCC33);
+
+        int y = top;
+        drawStr(graphics, "barry  F6:close  UP/DOWN:move  RIGHT:select", x, y, 0xFFFFCC33);
+        y += rowH;
+        int sel = barry.ui.Menu.mainSel();
+        for (int i = 0; i < items.length; i++) {
+            boolean selected = (i == sel);
+            if (selected) fillRect(graphics, x - 4, y - 1, x + w - 2, y + rowH - 2, 0x40FFFFFF);
+            String label = items[i];
+            if (i == 1) label = label + ": " + (barry.ui.Fullbright.isOn() ? "ON" : "OFF");
+            String prefix = selected ? "> " : "  ";
+            int col = selected ? 0xFFFFFFFF : 0xFFCCCCCC;
+            if (i == 1 && barry.ui.Fullbright.isOn() && !selected) col = 0xFF66FF66;
+            drawStr(graphics, prefix + label, x, y, col);
+            y += rowH;
+        }
     }
 
     private static void drawStr(Object graphics, String s, int x, int y, int color) {
@@ -251,7 +279,7 @@ public final class RenderHook {
         fillRect(graphics, x - 6, top + h - 1, x + w, top + h, 0xFF55FF55);
 
         int y = top;
-        drawStr(graphics, "FILTER  F6:close  type:search  Enter:toggle", x, y, 0xFF55FF55);
+        drawStr(graphics, "BLOCKS  Esc:back  type:search  Enter:toggle", x, y, 0xFF55FF55);
         y += rowH;
         // Search box line.
         String caret = ((System.currentTimeMillis() / 500) % 2 == 0) ? "_" : " ";
@@ -285,7 +313,7 @@ public final class RenderHook {
         fillRect(graphics, x - 6, top + h - 1, x + w, top + h, 0xFF55DDFF);
 
         int y = top;
-        drawStr(graphics, "KEYS  K:close  UP/DOWN:move  RIGHT:rebind", x, y, 0xFF55DDFF);
+        drawStr(graphics, "KEYS  Esc:back  UP/DOWN:move  RIGHT:rebind", x, y, 0xFF55DDFF);
         y += rowH;
         int sel = barry.ui.SettingsMenu.selected();
         boolean capturing = barry.ui.SettingsMenu.isCapturing();

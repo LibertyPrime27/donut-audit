@@ -14,7 +14,7 @@ public final class InputCapture {
 
     public static boolean shouldConsume() {
         try {
-            boolean c = FilterMenu.isOpen() || SettingsMenu.isOpen();
+            boolean c = Menu.isOpen();
             if (c && !loggedOnce) {
                 loggedOnce = true;
                 System.err.println("[barry] InputCapture: consuming keys (menu open)");
