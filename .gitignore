@@ -6,3 +6,12 @@ build/
 .idea/
 *.iml
 out/
+
+# C# injector build output
+src/injector/bin/
+src/injector/obj/
+
+# Built binaries (keep .gitkeep)
+builds/*.exe
+builds/*.pdb
+builds/*.dll
