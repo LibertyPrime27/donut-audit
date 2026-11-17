@@ -63,7 +63,6 @@ public final class Settings {
     private float watcherThreshold = 0.7f;
     private float watcherHysteresis = 0.3f;
     private int dwellBeforeDisconnect = 30;
-    private int panicKey = 261; // GLFW DELETE
     private final Map<String, Float> signalWeights = new ConcurrentHashMap<>();
 
     // === Inventory ===
@@ -114,7 +113,6 @@ public final class Settings {
     public int latencyMin() { return latencyMin; }
     public int latencyMax() { return latencyMax; }
     public float watcherThreshold() { return watcherThreshold; }
-    public int panicKey() { return panicKey; }
     public int dwellBeforeDisconnect() { return dwellBeforeDisconnect; }
     public int healthFloor() { return healthFloor; }
     public Dimension activeDimension() { return activeDimension; }
@@ -136,7 +134,7 @@ public final class Settings {
     public void setJitter(float v) { jitter = clamp(v, 0, 1); }
     public void setLatencyBounds(int min, int max) { latencyMin = min; latencyMax = max; }
     public void setWatcherThreshold(float v) { watcherThreshold = clamp(v, 0, 1); }
-    public void setPanicKey(int v) { panicKey = v; }
+    // panicKey moved to KeybindRegistry
     public void setHealthFloor(int v) { healthFloor = clamp(v, 0, 20); }
     public void setActiveDimension(Dimension d) { activeDimension = d; }
     public void setStopOnDebrisCount(int v) { stopOnDebrisCount = v; }

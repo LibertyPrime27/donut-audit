@@ -2,12 +2,15 @@ package barry.ui;
 
 import barry.Bootstrap;
 import barry.attach.Remap;
+import barry.config.KeybindRegistry;
+import barry.config.KeybindRegistry.Action;
 
 import java.lang.instrument.ClassFileTransformer;
 import java.lang.instrument.Instrumentation;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.security.ProtectionDomain;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class Overlay {
@@ -18,9 +21,9 @@ public final class Overlay {
     private static volatile Object minecraftInstance;
     private static volatile ClassLoader gameClassLoader;
 
-    // Hotkey: INSERT to toggle overlay, DELETE for panic (hide everything)
-    private static final int KEY_TOGGLE = 0x2D;  // VK_INSERT
-    private static final int KEY_PANIC  = 0x2E;  // VK_DELETE
+    // Key debounce state
+    private static volatile boolean lastToggleState = false;
+    private static volatile boolean lastPanicState = false;
 
     private Overlay() {}
 
@@ -84,19 +87,23 @@ public final class Overlay {
 
         // Poll keyboard state via LWJGL or AWT
         try {
-            boolean insertPressed = isKeyPressed(KEY_TOGGLE);
-            boolean deletePressed = isKeyPressed(KEY_PANIC);
+            KeybindRegistry kb = KeybindRegistry.get();
+            boolean panicDown = isKeyPressed(kb.keyFor(Action.PANIC));
+            boolean toggleDown = isKeyPressed(kb.keyFor(Action.OVERLAY_TOGGLE));
 
-            if (deletePressed) {
+            // Panic fires on key-down, even when overlay is closed
+            if (panicDown && !lastPanicState) {
                 panic();
+                lastPanicState = true;
                 return;
             }
+            lastPanicState = panicDown;
 
-            if (insertPressed) {
-                // Simple toggle debounce: flip on press, the 50ms tick rate
-                // provides natural debounce
+            // Toggle fires on key-down edge
+            if (toggleDown && !lastToggleState) {
                 VISIBLE.set(!VISIBLE.get());
             }
+            lastToggleState = toggleDown;
         } catch (Throwable ignored) {}
 
         // If visible, schedule render work on the game thread
@@ -105,32 +112,22 @@ public final class Overlay {
         }
     }
 
-    private static boolean isKeyPressed(int keyCode) {
+    // All key codes are GLFW constants (from KeybindRegistry).
+    private static boolean isKeyPressed(int glfwKeyCode) {
         try {
-            // Try LWJGL 3 (modern MC)
             Class<?> glfwClass = gameClassLoader.loadClass("org.lwjgl.glfw.GLFW");
-            // Need the window handle from Minecraft
             Object mc = getMinecraftInstance();
             if (mc == null) return false;
 
             Object window = findWindowHandle(mc);
             if (window instanceof Long handle) {
                 Method getKey = glfwClass.getMethod("glfwGetKey", long.class, int.class);
-                int glfwKeyCode = awtToGlfw(keyCode);
                 Object result = getKey.invoke(null, handle, glfwKeyCode);
                 return result instanceof Integer i && i == 1; // GLFW_PRESS
             }
         } catch (Throwable ignored) {}
 
         return false;
-    }
-
-    private static int awtToGlfw(int awtKey) {
-        return switch (awtKey) {
-            case 0x2D -> 260; // INSERT -> GLFW_KEY_INSERT
-            case 0x2E -> 261; // DELETE -> GLFW_KEY_DELETE
-            default -> awtKey;
-        };
     }
 
     private static Object getMinecraftInstance() {
