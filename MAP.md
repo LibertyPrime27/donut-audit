@@ -63,6 +63,7 @@ To be populated from live testing.
 | Blast probe | Nether | — | — | 100% (theoretical) |
 | Mining reveal | Both | — | — | 100% (theoretical) |
 | Cave exposure | Both | — | — | 100% (theoretical) |
+| PRNG oracle | Both | — | — | 99.9% (theoretical) |
 
 ## Per-Dimension Confidence
 
@@ -128,6 +129,9 @@ None have been verified against a live client.
 | RenderHook | `installTransformer()` | Logs "deferred to M3", does nothing | Needs bytecode patching |
 | EspRenderer | `renderWireBox()` | Finds method but never calls it | Needs VertexConsumer from buffer |
 | BlastProbe | `resolveBlockName()` | Returns "unknown:N" until registry populated | Needs block registry from game |
+| PrngOracle | `crackSeed()` | Brute-forces 2^32 xorshift seeds | Needs observed chunk data |
+| PrngOracle | `identifyFakes()` | Marks fake-block positions | Needs cracked seed |
+| PrngOracle | `analyzeSection()` | Full pipeline: crack + apply to BlockMap | Needs solidMask + presets |
 | XrayEngine | `onChunkData()` etc. | Routing methods exist, never called | Needs packet hook |
 | Inventory | hotbar scanning | Reflection stubs, never executed | Needs live player inventory |
 | StaffDetector | all signal inputs | Methods exist, never called | Needs packet listener |

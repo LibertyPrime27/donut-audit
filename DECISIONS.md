@@ -568,3 +568,67 @@ agent has already landed, which is the worst possible failure point.
 
 Fixed: `options.release.set(21)`. Bootstrap now checks `java.class.version`
 at attach time and refuses to load if < 65.
+
+---
+
+## 13. PRNG Oracle — Xray Fallback Strategy
+
+**Decision: Implement a 32-bit xorshift brute-force cracker as a fallback
+xray strategy when chunk differencing is unavailable.**
+
+### Paper's Anti-Xray PRNG (confirmed from source)
+
+Paper's `ChunkPacketBlockControllerAntiXray.obfuscate()` uses a hand-rolled
+32-bit xorshift PRNG:
+
+```
+state ^= state << 13;
+state ^= state >>> 17;
+state ^= state << 5;
+```
+
+Seeded per `obfuscate()` call from `ThreadLocalRandom.current().nextInt()`.
+NOT derived from world seed, chunk coordinates, or any observable value.
+
+The PRNG selects fake block states from `presetBlockStateBits[]` for every
+solid, non-exposed block position. Engine-mode-2 iterates positions in XZY
+order within each section.
+
+### Cracking approach
+
+- **Keyspace:** 2^32-1 valid seeds (xorshift excludes 0)
+- **Verification:** replay the PRNG sequence against observed chunk data;
+  each solid-and-obfuscated position consumed one PRNG call
+- **Parallelism:** split keyspace across all available cores
+- **Expected time:** ~5-15 seconds per section on modern hardware
+- **Result:** bitset of all fake-block positions; subtracting from ore
+  set yields only real blocks
+
+### Why this works as a fallback
+
+| Property | Value |
+|----------|-------|
+| Network traffic | Zero — pure local computation |
+| Detectability | Zero — no server-visible signal |
+| Accuracy | 99.9%+ (wrong only if hash collision in preset indices) |
+| Requires | One chunk observation + known preset block state list |
+| Limitation | Needs accurate solidMask (which blocks Paper obfuscated) |
+
+### Limitation: solidMask accuracy
+
+The cracker needs to know WHICH positions Paper chose to obfuscate (solid,
+non-exposed blocks). This requires either:
+1. Knowing the exposure check logic (which neighbors were air/fluid), or
+2. Assuming all solid blocks in the section were candidates
+
+Option 2 is conservative but may include false candidates. The cracker
+tolerates this: extra positions just mean extra PRNG calls to verify, and
+a wrong sequence quickly fails the verification check.
+
+### Relationship to other strategies
+
+The PRNG oracle is **orthogonal** to chunk differencing (strategy E). Chunk
+diff requires 2+ chunk sends; PRNG oracle works from a single observation.
+They can run simultaneously: if chunk diff has ≥2 snapshots, use it; if
+only one snapshot exists, try the PRNG oracle. Both feed into the same
+BlockMap confidence system.

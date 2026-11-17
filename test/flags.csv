@@ -55,3 +55,11 @@ M8,ClassHygiene,thread rename,STUB,sanitizeThreadNames never ran against game th
 M8,ClassHygiene,selfCheck,STUB,Never ran in an attached context
 M8,ConfigScramble,XOR ops,UNVERIFIED,Math compiles but no round-trip test
 M8,SelfCheck,runAll,STUB,Never ran against a live JVM
+M9,PrngOracle,xorshift math,UNVERIFIED,Compiles but not tested against Paper output
+M9,PrngOracle,crackSeed parallel,STUB,Never executed against real chunk data
+M9,PrngOracle,identifyFakes,STUB,Never executed against real chunk data
+M9,PrngOracle,analyzeSection,STUB,Never executed (no solidMask or preset data)
+M9,injector.exe,list command,PASS,Enumerates JVMs correctly
+M9,injector.exe,attach path,STUB,Requires running MC client
+M9,injector.exe,eject path,STUB,Requires running MC client
+M9,injector.exe,resource extraction,PASS,JAR and jattach extracted to temp and cleaned up

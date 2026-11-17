@@ -71,6 +71,8 @@ barry.util.*               BlockPos, ChunkKey, Dimension
 2. **Blast probing**: bed explosions reveal blast-resistant debris
 3. **Mining reveal**: block breaks trigger server-side real data in radius
 4. **Cave exposure**: ore with air/lava neighbors is confirmed real
+5. **PRNG oracle** (fallback): crack Paper's 32-bit xorshift per-chunk seed,
+   subtract all fake blocks to identify real ore with zero network traffic
 
 ### Overworld (Diamonds)
 Same strategies plus awareness of Donut hider terrain masking below Y=0.
@@ -100,7 +102,7 @@ Same strategies plus awareness of Donut hider terrain masking below Y=0.
 ## Scope Constraints
 
 - Local only — no remote, no push
-- No native exe
+- Native exe injector available in `builds/` (C#/.NET 7, embeds JAR + jattach)
 - No chat output
 - Accounts are whitelisted, AC config is changeable at will
 - Target: DonutSMP infrastructure only
