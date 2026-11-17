@@ -60,15 +60,13 @@ public final class Bootstrap {
 
             Overlay.init(inst);
 
-            // Post-attach self-check
+            ClassHygiene.sanitizeThreadNames();
+
             var checks = SelfCheck.runAll(inst);
             for (var check : checks) {
                 System.err.println("[barry] check " + check.name() + ": "
                     + (check.passed() ? "OK" : "FAIL") + " — " + check.detail());
             }
-
-            // Sanitize thread names to look vanilla
-            ClassHygiene.sanitizeThreadNames();
 
             System.err.println("[barry] Attached successfully.");
         } catch (Throwable t) {

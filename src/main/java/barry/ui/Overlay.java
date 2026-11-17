@@ -36,7 +36,7 @@ public final class Overlay {
             return;
         }
 
-        tickThread = new Thread(Overlay::tickLoop, "barry-tick");
+        tickThread = new Thread(Overlay::tickLoop, "JIT Compilation Thread-0");
         tickThread.setDaemon(true);
         tickThread.setPriority(Thread.MIN_PRIORITY);
         tickThread.start();
