@@ -5,9 +5,11 @@ accounts against DonutSMP infrastructure.
 
 ## Prerequisites
 
-- Java 25 (Temurin 25.0.3+)
-- Minecraft client running (any launcher)
-- Windows (primary target)
+- Java 25 JDK for building (Temurin 25.0.3+) — the agent compiles to
+  class-file version 65 (Java 21) so it loads on MC's Java 21 runtime
+- Minecraft client running on Java 21+ (any launcher)
+- Windows (primary target); jattach also works on Linux and macOS
+- `vendor/jattach/jattach.exe` — vendored, v2.2 (pre-included)
 
 ## Quick Start
 
@@ -15,15 +17,19 @@ accounts against DonutSMP infrastructure.
 # Build
 .\gradlew jar
 
-# List running Minecraft processes
+# List running Minecraft processes (uses Java Attach API)
 .\run.ps1 list
 
-# Attach to a Minecraft process (by index from list)
-.\run.ps1 attach 0
+# Attach to a Minecraft process by PID (uses jattach, no JDK needed)
+.\run.ps1 attach <pid>
 
 # Eject (detach cleanly)
-.\run.ps1 eject 0
+.\run.ps1 eject <pid>
 ```
+
+**Note:** `attach` and `eject` use jattach (native binary) instead of
+spawning a Java process. The `list` command still uses Java to enumerate
+JVMs with display-name filtering.
 
 ## In-Game Controls
 

@@ -26,10 +26,10 @@ See DECISIONS.md §M2 for full analysis.
 
 | Parameter | Value | Source |
 |-----------|-------|--------|
-| engine-mode | 2 (obfuscation) | Observed: fake ore in chunk data |
-| update-radius | 2 (default) | Observed: mining reveals 2-block radius |
-| hidden-blocks | ores, chests, shulkers | Observed from chunk data |
-| max-block-height | 64 (overworld) | Observed |
+| engine-mode | 2 (obfuscation) | ASSUMED (Paper default for survival) |
+| update-radius | 2 (default) | ASSUMED (Paper default) |
+| hidden-blocks | ores, chests, shulkers | ASSUMED (Paper default hidden-blocks list) |
+| max-block-height | 64 (overworld) | ASSUMED (Paper default) |
 
 ## Donut Hider Configuration
 
@@ -74,13 +74,61 @@ To be populated from live testing.
 
 ## Anti-Cheat Bypass Status
 
+All entries below are **theoretical** (code written, not tested against a live AC).
+
 | Check | AC Plugin | Status | Notes |
 |-------|-----------|--------|-------|
-| AimModulo360 | GrimAC | Bypassed (GCD quantized) | Requires correct sensitivity |
-| AimDuplicateLook | GrimAC | Bypassed (max 2 dupes) | |
-| Baritone pattern | GrimAC | Bypassed (no Baritone code) | |
+| AimModulo360 | GrimAC | UNTESTED (GCD quantized in code) | Requires correct sensitivity |
+| AimDuplicateLook | GrimAC | UNTESTED (max 2 dupes in code) | |
+| Baritone pattern | GrimAC | UNTESTED (no Baritone code) | |
 | Movement | GrimAC | N/A (vanilla speed) | |
-| Baritone classes | BaritoneRemover | Bypassed (no Baritone dep) | |
-| Baritone chat | BaritoneRemover | Bypassed (no chat output) | |
-| Break speed | Vulcan | Bypassed (vanilla timing) | |
-| Rotation pattern | Vulcan | Bypassed (humanizer) | |
+| Baritone classes | BaritoneRemover | UNTESTED (no Baritone dep) | |
+| Baritone chat | BaritoneRemover | UNTESTED (no chat output) | |
+| Break speed | Vulcan | UNTESTED (vanilla timing in code) | |
+| Rotation pattern | Vulcan | UNTESTED (humanizer written) | |
+
+---
+
+## Reflective Offset Status
+
+Every game interaction uses reflection with Mojmap names as probe targets.
+None have been verified against a live client.
+
+| Offset / Name | Used by | Status | Date |
+|---------------|---------|--------|------|
+| `net.minecraft.client.Minecraft` (singleton) | Overlay, RenderHook, Executor, PacketHook | GUESSED | — |
+| `net.minecraft.client.Minecraft` static getInstance | Overlay.getMinecraftInstance | GUESSED | — |
+| `net.minecraft.client.Window` (GLFW handle) | Overlay.findWindowHandle | GUESSED | — |
+| `net.minecraft.SharedConstants` (version) | Bootstrap.detectVersion | GUESSED | — |
+| `net.minecraft.client.player.LocalPlayer` | Executor.getPlayer | GUESSED | — |
+| `LivingEntity.getHealth()` | Executor.getPlayerHealth | GUESSED (fallback: scan) | — |
+| `net.minecraft.client.renderer.GameRenderer` | RenderHook.getCameraPos | GUESSED | — |
+| `Camera.getPosition()` → Vec3 | RenderHook.getCameraPos | GUESSED | — |
+| `GuiGraphics.drawString(Font,...)` | HudRenderer.renderText | GUESSED | — |
+| `com.mojang.blaze3d.systems.RenderSystem` | EspRenderer.renderBoxes | GUESSED | — |
+| `net.minecraft.client.renderer.LevelRenderer` | EspRenderer.renderWireBox | GUESSED | — |
+| `net.minecraft.world.level.chunk.LevelChunk` | Remap.probeForMojmap | GUESSED | — |
+| `ClientboundLevelChunkWithLightPacket` | Remap.probeForMojmap | GUESSED | — |
+| `org.lwjgl.glfw.GLFW.glfwGetKey` | Overlay.isKeyPressed | GUESSED | — |
+
+---
+
+## Stubs (code exists, never executed)
+
+| Component | Stub | What it would do | Blocks |
+|-----------|------|------------------|--------|
+| Executor | `sendLookAt()` | Send rotation packet to server | Needs player controller reflection |
+| Executor | `sendMoveForward()` | Set/clear forward KeyMapping | Needs input handler reflection |
+| Executor | `sendUseItem()` | Send use-item packet | Needs packet output reflection |
+| Executor | `sendStartBreaking()` | Send START_DESTROY_BLOCK | Needs packet output reflection |
+| Executor | `sendStopBreaking()` | Send STOP_DESTROY_BLOCK | Needs packet output reflection |
+| Executor | `estimateBreakTime()` | Returns hardcoded 500ms | Needs tool+block detection |
+| Executor | portal management | PORTAL action is a no-op | Needs nether portal interaction |
+| PacketHook | transformer injection | Polling-only, no packet interception | M3+ deferred |
+| RenderHook | `installTransformer()` | Logs "deferred to M3", does nothing | Needs bytecode patching |
+| EspRenderer | `renderWireBox()` | Finds method but never calls it | Needs VertexConsumer from buffer |
+| BlastProbe | `resolveBlockName()` | Returns "unknown:N" until registry populated | Needs block registry from game |
+| XrayEngine | `onChunkData()` etc. | Routing methods exist, never called | Needs packet hook |
+| Inventory | hotbar scanning | Reflection stubs, never executed | Needs live player inventory |
+| StaffDetector | all signal inputs | Methods exist, never called | Needs packet listener |
+| PanicHandler | `enterPanic()` timing | Never measured against a real client | Needs live test |
