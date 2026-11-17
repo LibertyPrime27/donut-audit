@@ -72,6 +72,7 @@ public final class WorldRenderHook {
             for (var e : near) {
                 BlockPos p = e.getKey();
                 OreType ore = OreType.fromBlockName(e.getValue().blockName());
+                if (ore != null && !ore.isEnabled()) continue; // filtered out in the menu
                 int color = ore != null ? ore.color() : 0xFFFFFFFF;
                 mPush.invoke(pose);
                 mTranslate.invoke(pose, p.x() - camX, p.y() - camY, p.z() - camZ);
@@ -200,13 +201,59 @@ public final class WorldRenderHook {
             Object freshPipeline = ctor.newInstance(args);
             try { rpClass.getMethod("updateSortKeySeed").invoke(freshPipeline); } catch (Throwable ignored) {}
 
-            // Swap it in (Unsafe handles the possibly-final field).
-            unsafeSet(renderSetup, pipelineF, freshPipeline);
+            // Clone the RenderSetup + RenderType so ONLY our outlines use the
+            // see-through pipeline. Mutating the captured (shared) RenderSetup in
+            // place would also make the vanilla block-highlight see-through, which
+            // we don't want — the vanilla outline must stay normal.
+            Object cloneSetup = allocateInstance(renderSetup.getClass());
+            copyFields(renderSetup, cloneSetup);
+            unsafeSet(cloneSetup, pipelineF, freshPipeline);
 
-            System.err.println("[barry] see-through pipeline installed (fresh ALWAYS_PASS, no depth write)");
+            Object cloneType = allocateInstance(renderType.getClass());
+            copyFields(renderType, cloneType);
+            unsafeSet(cloneType, stateF, cloneSetup);
+
+            linesRenderType = cloneType; // our outlines draw with the see-through clone
+            System.err.println("[barry] see-through RenderType installed (isolated clone, ALWAYS_PASS)");
         } catch (Throwable t) {
             System.err.println("[barry] installSeeThrough failed: " + t);
         }
+    }
+
+    // Copy every non-static instance field (whole hierarchy) from src to dst via
+    // Unsafe, so final fields copy cleanly.
+    private static void copyFields(Object src, Object dst) throws Exception {
+        for (Class<?> c = src.getClass(); c != null && c != Object.class; c = c.getSuperclass()) {
+            for (java.lang.reflect.Field f : c.getDeclaredFields()) {
+                if (java.lang.reflect.Modifier.isStatic(f.getModifiers())) continue;
+                f.setAccessible(true);
+                long off = (long) mObjectFieldOffset.invoke(unsafe, f);
+                Class<?> t = f.getType();
+                if (!t.isPrimitive()) {
+                    mPutObject.invoke(unsafe, dst, off, f.get(src));
+                } else if (t == boolean.class) {
+                    mPutBoolean.invoke(unsafe, dst, off, f.getBoolean(src));
+                } else if (t == int.class) {
+                    mPutInt.invoke(unsafe, dst, off, f.getInt(src));
+                } else if (t == long.class) {
+                    mPutLong.invoke(unsafe, dst, off, f.getLong(src));
+                } else if (t == float.class) {
+                    mPutFloat.invoke(unsafe, dst, off, f.getFloat(src));
+                } else if (t == double.class) {
+                    mPutDouble.invoke(unsafe, dst, off, f.getDouble(src));
+                } else if (t == byte.class) {
+                    mPutByte.invoke(unsafe, dst, off, f.getByte(src));
+                } else if (t == short.class) {
+                    mPutShort.invoke(unsafe, dst, off, f.getShort(src));
+                } else if (t == char.class) {
+                    mPutChar.invoke(unsafe, dst, off, f.getChar(src));
+                }
+            }
+        }
+    }
+
+    private static Object allocateInstance(Class<?> c) throws Exception {
+        return mAllocateInstance.invoke(unsafe, c);
     }
 
     private static Object field(Class<?> c, Object obj, String name) throws Exception {
@@ -222,9 +269,10 @@ public final class WorldRenderHook {
         return arr;
     }
 
-    // --- Unsafe (for swapping a possibly-final field) ---
+    // --- Unsafe (for allocating clones and writing possibly-final fields) ---
     private static Object unsafe;
-    private static Method mObjectFieldOffset, mPutObject;
+    private static Method mObjectFieldOffset, mAllocateInstance;
+    private static Method mPutObject, mPutBoolean, mPutInt, mPutLong, mPutFloat, mPutDouble, mPutByte, mPutShort, mPutChar;
 
     private static void initUnsafe(ClassLoader cl) throws Exception {
         if (unsafe != null) return;
@@ -233,7 +281,16 @@ public final class WorldRenderHook {
         tu.setAccessible(true);
         unsafe = tu.get(null);
         mObjectFieldOffset = u.getMethod("objectFieldOffset", java.lang.reflect.Field.class);
-        mPutObject = u.getMethod("putObject", Object.class, long.class, Object.class);
+        mAllocateInstance = u.getMethod("allocateInstance", Class.class);
+        mPutObject  = u.getMethod("putObject", Object.class, long.class, Object.class);
+        mPutBoolean = u.getMethod("putBoolean", Object.class, long.class, boolean.class);
+        mPutInt     = u.getMethod("putInt", Object.class, long.class, int.class);
+        mPutLong    = u.getMethod("putLong", Object.class, long.class, long.class);
+        mPutFloat   = u.getMethod("putFloat", Object.class, long.class, float.class);
+        mPutDouble  = u.getMethod("putDouble", Object.class, long.class, double.class);
+        mPutByte    = u.getMethod("putByte", Object.class, long.class, byte.class);
+        mPutShort   = u.getMethod("putShort", Object.class, long.class, short.class);
+        mPutChar    = u.getMethod("putChar", Object.class, long.class, char.class);
     }
 
     private static void unsafeSet(Object obj, java.lang.reflect.Field f, Object val) throws Exception {
