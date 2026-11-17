@@ -30,10 +30,10 @@ switch ($action) {
             Write-Host "Usage: .\run.ps1 attach <pid>"
             exit 1
         }
-        $pid = $cmd[1]
+        $targetPid = $cmd[1]
         $absJar = (Resolve-Path $jar).Path
-        Write-Host "barry> attach PID $pid via jattach"
-        & $jattach $pid load instrument false "$absJar=attach"
+        Write-Host "barry> attach PID $targetPid via jattach"
+        & $jattach $targetPid load instrument false "$absJar=attach"
         if ($LASTEXITCODE -ne 0) { throw "jattach attach failed (exit $LASTEXITCODE)" }
         Write-Host "Agent loaded."
     }
@@ -42,10 +42,10 @@ switch ($action) {
             Write-Host "Usage: .\run.ps1 eject <pid>"
             exit 1
         }
-        $pid = $cmd[1]
+        $targetPid = $cmd[1]
         $absJar = (Resolve-Path $jar).Path
-        Write-Host "barry> eject PID $pid via jattach"
-        & $jattach $pid load instrument false "$absJar=eject"
+        Write-Host "barry> eject PID $targetPid via jattach"
+        & $jattach $targetPid load instrument false "$absJar=eject"
         if ($LASTEXITCODE -ne 0) { throw "jattach eject failed (exit $LASTEXITCODE)" }
         Write-Host "Eject signal sent."
     }
