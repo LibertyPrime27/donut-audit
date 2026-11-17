@@ -32,6 +32,12 @@ public final class Executor {
     private int healthFloor = 4; // half-hearts
     private long startTime;
 
+    // Stuck detection: if the player position doesn't change for
+    // stuckTimeout consecutive checks, abort the current task.
+    private int stuckTimeout = 30; // seconds
+    private BlockPos lastStuckPos;
+    private long stuckSince = 0;
+
     // Counters
     private int debrisCollected = 0;
     private int blocksMinced = 0;
@@ -84,10 +90,24 @@ public final class Executor {
                     return;
                 }
 
-                // Update position
+                // Update position and stuck detection
                 BlockPos pos = engine.playerPos();
                 planner.setPlayerPos(pos);
                 trackDistance(pos);
+
+                if (pos != null && pos.equals(lastStuckPos)) {
+                    if (stuckSince == 0) stuckSince = System.currentTimeMillis();
+                    long stuckMs = System.currentTimeMillis() - stuckSince;
+                    if (stuckMs > stuckTimeout * 1000L) {
+                        System.err.println("[barry] Stuck for " + (stuckMs / 1000)
+                            + "s at " + pos + ", invalidating plan.");
+                        planner.invalidatePlan();
+                        stuckSince = 0;
+                    }
+                } else {
+                    lastStuckPos = pos;
+                    stuckSince = 0;
+                }
 
                 // Rate governor: should we pause?
                 long pauseMs = governor.shouldPause(debrisCollected, startTime);
@@ -259,16 +279,34 @@ public final class Executor {
         return true;
     }
 
+    // GUESSED: assumes Mojmap name "getHealth" on LivingEntity.
+    // Degrade to -1 (unknown) on failure — safetyCheck treats -1 as healthy.
     private float getPlayerHealth() {
         try {
             Object player = getPlayer();
             if (player == null) return -1;
-            Method getHealth = player.getClass().getMethod("getHealth");
+            // Try Mojmap name first, then scan for float-returning no-arg methods
+            Method getHealth = null;
+            try {
+                getHealth = player.getClass().getMethod("getHealth");
+            } catch (NoSuchMethodException e) {
+                for (Method m : player.getClass().getMethods()) {
+                    if (m.getParameterCount() == 0 && m.getReturnType() == float.class
+                            && m.getName().length() <= 3) {
+                        getHealth = m;
+                        break;
+                    }
+                }
+            }
+            if (getHealth == null) return -1;
             return (float) getHealth.invoke(player);
         } catch (Throwable ignored) { return -1; }
     }
 
+    // GUESSED: Mojmap names for Minecraft singleton and LocalPlayer field.
+    // Falls back to scanning by type shape if names don't resolve.
     private Object getPlayer() {
+        if (gameClassLoader == null) return null;
         try {
             if (mcInstance == null) {
                 String mcClassName = Remap.resolveClass("net.minecraft.client.Minecraft");

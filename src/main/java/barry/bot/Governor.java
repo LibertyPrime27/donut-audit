@@ -51,25 +51,25 @@ public final class Governor {
 
         double error = currentRate - effectiveTarget;
 
-        // Deadband: if within ±10% of target, don't adjust
+        // Deadband: if within ±10% of target, decay integral toward zero
+        // rather than hard-resetting (hard reset causes a bump on re-entry)
         if (Math.abs(error) < effectiveTarget * DEADBAND) {
-            integralError = 0;
+            integralError *= 0.9;
             return 0;
         }
 
+        // Accumulate integral with symmetric anti-windup clamping
+        integralError += error;
+        integralError = Math.max(-ANTI_WINDUP, Math.min(ANTI_WINDUP, integralError));
+
         if (error > 0) {
             // Rate too high — need to slow down
-            integralError += error;
-            integralError = Math.min(integralError, ANTI_WINDUP);
-
             double output = kp * error + ki * integralError;
-            // Output in seconds of pause per minute
             long pauseMs = (long) (output * 100);
             return Math.min(pauseMs, 10000); // cap at 10 second pause
         }
 
         // Rate too low — no pause, let the bot run freely
-        integralError = Math.max(integralError - 1, -ANTI_WINDUP);
         return 0;
     }
 
