@@ -680,3 +680,47 @@ position just overdraw). Verified: stable, no flicker.
 
 `retransformClasses` on the already-loaded `Hud` works (confirmed with a
 `tick()` probe) — the redefinition swaps the live method bytecode.
+
+### 14.4 See-through 3D outlines: fresh pipeline, not mutation
+
+World outlines are drawn per-frame by hooking
+`LevelRenderer.submitEntities(PoseStack, LevelRenderState, SubmitNodeCollector)`
+and calling `SubmitNodeCollector.submitShapeOutline(pose, Shapes.block(),
+renderType, colorARGB, width, depthTest=false)` for each nearby ore. The line
+`RenderType` has no static factory on 26.3, so we capture the game's own line
+type from `submitHitOutline` (ASM-inject `captureLineRenderType` at its entry).
+
+Making those outlines render **through terrain** (true xray) was the hard part.
+26.3 renders through **renderpearl** (`com.mojang.renderpearl`). Dead ends, all
+verified live:
+- Mutating the captured pipeline's `depthStencilState` to `ALWAYS_PASS` and/or
+  swapping its `location` has **no visible effect**. The backend
+  (`GlDevice`) compiles and caches the GL pipeline keyed on the `RenderPipeline`
+  object; the cached program keeps the depth state it was compiled with.
+- There is **no evict/invalidate/recompile** path. `GlDevice.recompiler`
+  (`GlPipelineRecompiler`) only exposes `compileProgram`/`decompileShaders`;
+  neither `GlDevice` nor the recompiler nor `PipelineBuilder` holds an evictable
+  `Map<RenderPipeline, …>`.
+
+Working solution (`WorldRenderHook.installSeeThrough`): build a **fresh**
+`RenderPipeline` and swap it in, so the backend compiles a new program.
+- `RenderType.state` is a `RenderSetup` (not a record) whose `pipeline` field
+  holds the `RenderPipeline`.
+- `RenderPipeline` has one 12-arg ctor: `(Identifier location, Map shaders,
+  ShaderDefines, Collection bindGroupLayouts, ColorTargetState[], DepthStencilState,
+  PolygonMode, boolean cull, VertexFormat[], PrimitiveTopology, int pushConstantSize,
+  int sortKey)`. The `colorTargetStates`/`vertexFormatPerBuffer` fields are
+  `List` but the ctor takes arrays — convert.
+- Copy every field from the captured pipeline, replace `DepthStencilState` with
+  `new DepthStencilState(CompareOp.ALWAYS_PASS, /*writeDepth*/ false)` (ctor
+  `(CompareOp, boolean)`), and give it a **unique** `Identifier` (suffix the
+  original) so it can't collide with the cached original.
+- `updateSortKeySeed()` on the new pipeline, then write it into
+  `RenderSetup.pipeline`. That field may be final, so set it via
+  `sun.misc.Unsafe.putObject(obj, objectFieldOffset(f), val)`.
+
+A brand-new `RenderPipeline` object is a backend cache miss, so it compiles
+fresh with depth test AND depth write off → outlines draw through walls.
+Note this mutates the shared line `RenderSetup`, so the vanilla block-highlight
+(and debug hitboxes/chunk borders) also become see-through — imperceptible in
+practice. Verified live on 26.3.
