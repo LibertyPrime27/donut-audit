@@ -13,6 +13,9 @@ java {
 
 tasks.withType<JavaCompile> {
     options.encoding = "UTF-8"
+    // Emit class-file version 21 so the agent loads on MC's Java 21 runtime.
+    // The build JDK is 25 but the payload must be compatible with the target.
+    options.release.set(21)
     options.compilerArgs.addAll(listOf(
         "--add-modules", "jdk.attach",
         "-Xlint:none"

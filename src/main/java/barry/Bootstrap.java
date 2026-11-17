@@ -1,6 +1,9 @@
 package barry;
 
 import barry.attach.Remap;
+import barry.hardening.ClassHygiene;
+import barry.hardening.ConfigScramble;
+import barry.hardening.SelfCheck;
 import barry.ui.Overlay;
 
 import java.lang.instrument.Instrumentation;
@@ -34,6 +37,18 @@ public final class Bootstrap {
         INST.set(inst);
 
         try {
+            // Class-file version gate: fail closed if the target JVM is
+            // older than what we compiled for (major 65 = Java 21).
+            float classVersion = Float.parseFloat(System.getProperty("java.class.version", "0"));
+            if (classVersion < 65.0f) {
+                System.err.println("[barry] Target JVM class version " + classVersion
+                    + " < 65 (Java 21). Refusing to load — class format errors would follow.");
+                LOADED.set(false);
+                return;
+            }
+
+            ConfigScramble.init();
+
             String version = detectVersion();
             if (version == null) {
                 System.err.println("[barry] Could not detect Minecraft version. Entering degraded mode.");
@@ -44,6 +59,17 @@ public final class Bootstrap {
             }
 
             Overlay.init(inst);
+
+            // Post-attach self-check
+            var checks = SelfCheck.runAll(inst);
+            for (var check : checks) {
+                System.err.println("[barry] check " + check.name() + ": "
+                    + (check.passed() ? "OK" : "FAIL") + " — " + check.detail());
+            }
+
+            // Sanitize thread names to look vanilla
+            ClassHygiene.sanitizeThreadNames();
+
             System.err.println("[barry] Attached successfully.");
         } catch (Throwable t) {
             System.err.println("[barry] Fatal during attach:");
@@ -59,6 +85,8 @@ public final class Bootstrap {
         try {
             Overlay.shutdown();
             Remap.shutdown();
+            ClassHygiene.scrub();
+            ConfigScramble.wipe();
             LOADED.set(false);
             INST.set(null);
             System.err.println("[barry] Ejected cleanly.");
