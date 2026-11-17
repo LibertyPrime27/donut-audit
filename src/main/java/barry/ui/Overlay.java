@@ -30,6 +30,8 @@ public final class Overlay {
     // Rebind capture: snapshot of keys held when capture began (ignored until
     // released) so we don't grab the key that started the capture.
     private static volatile boolean[] heldSnapshot;
+    // Per-tick key snapshot for the filter search box (edge-detect typed keys).
+    private static volatile boolean[] searchPrev;
 
     private Overlay() {}
 
@@ -129,6 +131,8 @@ public final class Overlay {
             if (filterKey && !lastMenuState && VISIBLE.get()) {
                 SettingsMenu.close();
                 FilterMenu.toggleOpen();
+                System.err.println("[barry] FilterMenu " + (FilterMenu.isOpen() ? "OPEN" : "closed")
+                        + " (F6 scancode=" + effectiveScancode(Action.FILTER_MENU) + ")");
             }
             lastMenuState = filterKey;
 
@@ -162,6 +166,15 @@ public final class Overlay {
                 lastMenuUp = up; lastMenuDown = dn; lastMenuToggleItem = tg;
             } else {
                 lastMenuUp = lastMenuDown = lastMenuToggleItem = false;
+            }
+
+            // Filter search box: type to filter, Backspace to delete, Enter to
+            // toggle the selected block, Esc to close. The input-capture hook keeps
+            // these keys out of the game while the menu is open.
+            if (FilterMenu.isOpen() && !SettingsMenu.isOpen()) {
+                pollSearchInput();
+            } else {
+                searchPrev = null;
             }
 
             // Rebind capture: Esc cancels; otherwise the first newly-pressed key wins.
@@ -205,10 +218,14 @@ public final class Overlay {
             case 266: return 75; // PAGE_UP
             case 269: return 77; // END
             case 268: return 74; // HOME
-            case 77:  return 16; // M  (filter menu)
+            case 77:  return 16; // M
+            case 75:  return 14; // K
+            case 295: return 63; // F6 (filter menu)
+            case 296: return 64; // F7 (settings menu)
             case 265: return 82; // UP arrow
             case 264: return 81; // DOWN arrow
             case 262: return 79; // RIGHT arrow
+            case 257: return 40; // ENTER
             default:  return -1;
         }
     }
@@ -289,6 +306,35 @@ public final class Overlay {
             }
         } catch (Throwable ignored) {}
         return -1;
+    }
+
+    // Edge-detect newly pressed keys and drive the filter search box.
+    private static void pollSearchInput() {
+        try {
+            java.nio.ByteBuffer bb = keyboardBuffer();
+            if (bb == null) return;
+            boolean[] prev = searchPrev;
+            for (int sc = 4; sc < bb.limit(); sc++) {
+                boolean down = bb.get(sc) != 0;
+                boolean was = prev != null && sc < prev.length && prev[sc];
+                if (down && !was) handleSearchKey(sc);
+            }
+            boolean[] snap = new boolean[bb.limit()];
+            for (int i = 0; i < bb.limit(); i++) snap[i] = bb.get(i) != 0;
+            searchPrev = snap;
+        } catch (Throwable ignored) {}
+    }
+
+    private static void handleSearchKey(int sc) {
+        if (sc >= 4 && sc <= 29) { FilterMenu.appendChar((char) ('a' + (sc - 4))); return; }
+        if (sc >= 30 && sc <= 38) { FilterMenu.appendChar((char) ('1' + (sc - 30))); return; }
+        switch (sc) {
+            case 39: FilterMenu.appendChar('0'); break;
+            case 42: FilterMenu.backspace(); break;      // Backspace
+            case 40: FilterMenu.toggleSelected(); break; // Enter
+            case 41: FilterMenu.close(); break;          // Esc
+            default: /* arrows, F6, etc. handled elsewhere */ break;
+        }
     }
 
     private static String scancodeName(int sc) {

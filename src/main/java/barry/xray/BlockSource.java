@@ -19,8 +19,8 @@ import java.util.Map;
 // thread. Mojmap client only (resolved live).
 public final class BlockSource {
 
-    private static final int DEFAULT_RADIUS = 24;
-    private static final int DEFAULT_VERTICAL = 24;
+    private static final int DEFAULT_RADIUS = 28;
+    private static final int DEFAULT_VERTICAL = 56; // reach ore levels (e.g. nether ancient_debris at Y8-22)
     private static final long SCAN_PERIOD_MS = 500;
 
     private volatile XrayEngine engine;
@@ -39,6 +39,11 @@ public final class BlockSource {
 
     // Block instance -> OreType (identity match)
     private final Map<Object, OreType> blockToOre = new IdentityHashMap<>();
+
+    // Diagnostics
+    private final java.util.Set<OreType> seen = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private long scanCount;
+    private volatile boolean debrisLogged;
 
     private int radius = DEFAULT_RADIUS;
     private int vertical = DEFAULT_VERTICAL;
@@ -78,16 +83,21 @@ public final class BlockSource {
     private boolean buildOreTable() {
         try {
             Class<?> blocks = cl.loadClass("net.minecraft.world.level.block.Blocks");
+            java.util.List<String> ok = new java.util.ArrayList<>();
+            java.util.List<String> missing = new java.util.ArrayList<>();
             for (OreType ore : OreType.values()) {
                 String fieldName = ore.blockName().toUpperCase();
                 try {
                     Field f = blocks.getField(fieldName);
                     Object block = f.get(null);
-                    if (block != null) blockToOre.put(block, ore);
+                    if (block != null) { blockToOre.put(block, ore); ok.add(fieldName); }
+                    else missing.add(fieldName + "(null)");
                 } catch (NoSuchFieldException nsf) {
-                    // Not present in this version — skip.
+                    missing.add(fieldName);
                 }
             }
+            System.err.println("[barry] ore table OK (" + ok.size() + "): " + ok);
+            if (!missing.isEmpty()) System.err.println("[barry] ore table MISSING: " + missing);
             return !blockToOre.isEmpty();
         } catch (Throwable t) {
             System.err.println("[barry] BlockSource: ore table error: " + t);
@@ -184,7 +194,18 @@ public final class BlockSource {
                         if (state == null) continue;
                         Object block = mGetBlock.invoke(state);
                         OreType ore = blockToOre.get(block);
-                        if (ore == null) continue;
+                        if (ore == null) {
+                            if (!debrisLogged) {
+                                String bs = String.valueOf(block);
+                                if (bs.toLowerCase().contains("debris")) {
+                                    System.err.println("[barry] UNMATCHED debris-like block: class="
+                                            + block.getClass().getName() + " toString=" + bs
+                                            + " identity=" + System.identityHashCode(block));
+                                    debrisLogged = true;
+                                }
+                            }
+                            continue;
+                        }
                         // Record any matched block regardless of dimension. Matching
                         // is by exact block identity and the filter menu controls
                         // what shows, so the dimension gate only risked dropping
@@ -193,9 +214,27 @@ public final class BlockSource {
                                 BlockConfidence.groundTruth(0, ore.blockName(),
                                         BlockConfidence.Source.BLOCK_UPDATE));
                         found++;
+                        if (seen.add(ore)) {
+                            System.err.println("[barry] first detected: " + ore.blockName()
+                                    + " @ " + x + "," + y + "," + z);
+                        }
                     } catch (Throwable ignored) {}
                 }
             }
+        }
+        // Periodic heartbeat so we can see scan reach vs. player position.
+        if ((scanCount++ % 6) == 0) {
+            String feet = "?";
+            try {
+                Object pos = ctorBlockPos.newInstance(px, py - 1, pz);
+                Object st = mGetBlockState.invoke(level, pos);
+                Object blk = mGetBlock.invoke(st);
+                feet = String.valueOf(blk) + (blockToOre.containsKey(blk) ? " [MATCHED]" : "");
+            } catch (Throwable ignore) {}
+            System.err.println("[barry] scan @ " + px + "," + py + "," + pz
+                    + " dim=" + (dim == null ? eng.currentDimension() : dim)
+                    + " found=" + found + " types=" + seen.size()
+                    + " feet=" + feet + " (r=" + radius + " v=" + vertical + ")");
         }
         if (found > 0) {
             // Light heartbeat so we can confirm scans land.
@@ -203,14 +242,39 @@ public final class BlockSource {
         }
     }
 
+    private volatile boolean dimLogged;
+    private volatile Method mDimLoc; // discovered Identifier accessor on the ResourceKey
+
     private Dimension readDimension(Object level) {
         try {
             if (mDimension == null) return null;
             Object key = mDimension.invoke(level);
             if (key == null) return null;
-            Object loc = key.getClass().getMethod("location").invoke(key);
-            if (loc != null) return Dimension.fromId(loc.toString());
-        } catch (Throwable ignored) {}
+
+            // Cached accessor.
+            if (mDimLoc != null) {
+                Object loc = mDimLoc.invoke(key);
+                if (loc != null) {
+                    Dimension d = Dimension.fromId(loc.toString());
+                    if (d != Dimension.UNKNOWN) return d;
+                }
+            }
+            // Discover: a ResourceKey exposes more than one Identifier accessor
+            // (registry vs value). Pick whichever yields a known dimension id.
+            for (Method m : key.getClass().getMethods()) {
+                if (m.getParameterCount() != 0) continue;
+                String rn = m.getReturnType().getSimpleName();
+                if (!rn.equals("Identifier") && !rn.equals("ResourceLocation")) continue;
+                try {
+                    Object loc = m.invoke(key);
+                    if (loc == null) continue;
+                    Dimension d = Dimension.fromId(loc.toString());
+                    if (!dimLogged) System.err.println("[barry] dim probe: " + m.getName() + "() = " + loc + " -> " + d);
+                    if (d != Dimension.UNKNOWN) { mDimLoc = m; dimLogged = true; return d; }
+                } catch (Throwable ignore) {}
+            }
+            dimLogged = true;
+        } catch (Throwable ignore) {}
         return null;
     }
 

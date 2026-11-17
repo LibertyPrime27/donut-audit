@@ -241,21 +241,30 @@ public final class RenderHook {
     }
 
     private static void drawFilterMenu(Object graphics) {
-        barry.core.OreType[] ores = barry.core.OreType.values();
-        int x = 140, top = 24, w = 210;
-        int rowH = 10;
-        int h = (ores.length + 2) * rowH + 8;
-        // Background + border.
+        java.util.List<barry.core.OreType> vis = barry.ui.FilterMenu.visible();
+        String query = barry.ui.FilterMenu.query();
+        int x = 140, top = 24, w = 230, rowH = 10;
+        int rows = Math.max(vis.size(), 1);
+        int h = (rows + 3) * rowH + 8;
         fillRect(graphics, x - 6, top - 6, x + w, top + h, 0xC0101014);
         fillRect(graphics, x - 6, top - 6, x + w, top - 5, 0xFF55FF55);
         fillRect(graphics, x - 6, top + h - 1, x + w, top + h, 0xFF55FF55);
 
         int y = top;
-        drawStr(graphics, "FILTER  M:close  UP/DOWN:move  RIGHT:toggle", x, y, 0xFF55FF55);
+        drawStr(graphics, "FILTER  F6:close  type:search  Enter:toggle", x, y, 0xFF55FF55);
         y += rowH;
+        // Search box line.
+        String caret = ((System.currentTimeMillis() / 500) % 2 == 0) ? "_" : " ";
+        drawStr(graphics, "search: " + query + caret, x, y, 0xFFFFFF88);
+        y += rowH;
+
         int sel = barry.ui.FilterMenu.selected();
-        for (int i = 0; i < ores.length; i++) {
-            barry.core.OreType o = ores[i];
+        if (vis.isEmpty()) {
+            drawStr(graphics, "  (no blocks match)", x, y, 0xFF888888);
+            return;
+        }
+        for (int i = 0; i < vis.size(); i++) {
+            barry.core.OreType o = vis.get(i);
             boolean on = o.isEnabled();
             boolean selected = (i == sel);
             if (selected) fillRect(graphics, x - 4, y - 1, x + w - 2, y + rowH - 2, 0x40FFFFFF);
@@ -395,7 +404,8 @@ public final class RenderHook {
             for (String target : new String[]{
                     "net.minecraft.client.gui.Hud",
                     "net.minecraft.client.gui.Gui",
-                    "net.minecraft.client.renderer.LevelRenderer"}) {
+                    "net.minecraft.client.renderer.LevelRenderer",
+                    "net.minecraft.client.KeyboardHandler"}) {
                 try {
                     inst.retransformClasses(cl.loadClass(target));
                     hooked++;

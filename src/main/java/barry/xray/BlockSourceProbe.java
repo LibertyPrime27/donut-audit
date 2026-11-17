@@ -176,6 +176,58 @@ public final class BlockSourceProbe {
         System.err.println("[barry] ===== END SEE-THROUGH API =====");
     }
 
+    // Discover MC 26.3's keyboard input path so we can hook it and swallow keys
+    // while our menu is open (type-to-search + Enter-to-enable).
+    private static void dumpInputApi(Object mc) {
+        System.err.println("[barry] ===== INPUT API =====");
+        Object kh = findFieldValueByTypeName(mc, "KeyboardHandler");
+        System.err.println("[barry] keyboardHandler = " + typeOf(kh));
+        if (kh != null) {
+            System.err.println("[barry] --- KeyboardHandler declared methods ---");
+            for (Method m : kh.getClass().getDeclaredMethods()) {
+                if (m.getName().startsWith("lambda$")) continue;
+                System.err.println("[barry]   " + sig(m));
+            }
+            System.err.println("[barry] --- KeyboardHandler fields ---");
+            for (Field f : kh.getClass().getDeclaredFields()) {
+                System.err.println("[barry]   " + f.getName() + " : " + f.getType().getName());
+            }
+        }
+        Object mh = findFieldValueByTypeName(mc, "MouseHandler");
+        System.err.println("[barry] mouseHandler = " + typeOf(mh));
+        // How is the current screen tracked? (so we can detect/avoid GUI states)
+        System.err.println("[barry] --- Minecraft screen methods ---");
+        for (Method m : mc.getClass().getMethods()) {
+            String n = m.getName().toLowerCase();
+            if ((n.contains("screen") || n.equals("setscreen")) && m.getParameterCount() <= 1) {
+                System.err.println("[barry]   " + sig(m));
+            }
+        }
+        // Screen field on mc (null in-world).
+        for (Field f : mc.getClass().getDeclaredFields()) {
+            if (f.getType().getSimpleName().equals("Screen")) {
+                System.err.println("[barry]   screen field: " + f.getName() + " : " + f.getType().getName());
+            }
+        }
+        // The SDL event dispatcher: any loaded class that references SDL keyboard events.
+        System.err.println("[barry] --- candidate SDL input dispatchers (loaded) ---");
+        try {
+            var inst = barry.Bootstrap.instrumentation();
+            if (inst != null) {
+                int shown = 0;
+                for (Class<?> c : inst.getAllLoadedClasses()) {
+                    String n = c.getName();
+                    if ((n.startsWith("net.minecraft") || n.startsWith("com.mojang"))
+                            && (n.toLowerCase().contains("keyboard") || n.toLowerCase().contains("input"))) {
+                        System.err.println("[barry]   " + n);
+                        if (++shown > 20) break;
+                    }
+                }
+            }
+        } catch (Throwable ignored) {}
+        System.err.println("[barry] ===== END INPUT API =====");
+    }
+
     private static void dumpDeviceApi(ClassLoader cl) {
         try {
             Class<?> rs = cl.loadClass("com.mojang.blaze3d.systems.RenderSystem");
@@ -288,6 +340,7 @@ public final class BlockSourceProbe {
         Object mc = RenderHook.minecraftInstance();
         if (mc == null) { System.err.println("[barry] probe: no mc"); return; }
 
+        try { dumpInputApi(mc); } catch (Throwable t) { System.err.println("[barry] input probe err: " + t); }
         try { dumpSeeThroughApi(mc.getClass().getClassLoader()); } catch (Throwable t) { System.err.println("[barry] seethrough probe err: " + t); }
         try { dumpDepthApi(); } catch (Throwable t) { System.err.println("[barry] depth probe err: " + t); }
         try { dumpDeviceApi(mc.getClass().getClassLoader()); } catch (Throwable t) { System.err.println("[barry] device probe err: " + t); }

@@ -30,6 +30,7 @@ public final class WorldRenderHook {
     private static Method mMainCamera, mPosition;
     private static java.lang.reflect.Field vecX, vecY, vecZ;
     private static Object gameRenderer;
+    private static volatile long lastRenderLog;
 
     private WorldRenderHook() {}
 
@@ -69,9 +70,12 @@ public final class WorldRenderHook {
 
             BlockPos player = eng.playerPos();
             var near = eng.currentMap().oresNear(player, 64.0, 0.0f);
+            int total = 0, submitted = 0, debrisInRange = 0;
             for (var e : near) {
+                total++;
                 BlockPos p = e.getKey();
                 OreType ore = OreType.fromBlockName(e.getValue().blockName());
+                if (ore == OreType.ANCIENT_DEBRIS) debrisInRange++;
                 if (ore != null && !ore.isEnabled()) continue; // filtered out in the menu
                 int color = ore != null ? ore.color() : 0xFFFFFFFF;
                 mPush.invoke(pose);
@@ -79,6 +83,15 @@ public final class WorldRenderHook {
                 // (pose, shape, renderType, colorARGB, lineWidth, depthTest)
                 mSubmitShapeOutline.invoke(collector, pose, blockShape, linesRenderType, color, 2.5f, false);
                 mPop.invoke(pose);
+                submitted++;
+            }
+            long now = System.currentTimeMillis();
+            if (now - lastRenderLog > 2000) {
+                lastRenderLog = now;
+                System.err.println("[barry] render: inRange=" + total + " submitted=" + submitted
+                        + " debrisInRange=" + debrisInRange
+                        + " debrisEnabled=" + OreType.ANCIENT_DEBRIS.isEnabled()
+                        + " map=" + eng.currentDimension());
             }
         } catch (Throwable t) {
             // Never crash the render thread.

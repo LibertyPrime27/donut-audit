@@ -10,7 +10,8 @@ public final class GuiTransformer implements ClassFileTransformer {
     private static final java.util.Set<String> TARGET_CLASSES = java.util.Set.of(
             "net/minecraft/client/gui/Hud",            // 26.x: extract*(GuiGraphicsExtractor,...)
             "net/minecraft/client/gui/Gui",            // 1.21.x: render(GuiGraphics,...)
-            "net/minecraft/client/renderer/LevelRenderer"); // 26.x: submitBlockOutline(...)
+            "net/minecraft/client/renderer/LevelRenderer", // 26.x: submitBlockOutline(...)
+            "net/minecraft/client/KeyboardHandler");   // consume input while a menu is open
 
     private static final int MAX_SUPPORTED_VERSION = 67; // ASM 9.7 ceiling (Java 23)
 
@@ -33,7 +34,15 @@ public final class GuiTransformer implements ClassFileTransformer {
 
             int[] hookCount = {0};
             ClassReader cr = new ClassReader(buf);
-            ClassWriter cw = new ClassWriter(cr, ClassWriter.COMPUTE_MAXS);
+            // The input-capture hook inserts a conditional early-return (a branch),
+            // which needs recomputed stack-map frames or the retransform fails
+            // verification. Use COMPUTE_FRAMES there, with a loader-aware
+            // getCommonSuperClass so frame computation can resolve game types.
+            // Other targets only insert a call (no branch) → COMPUTE_MAXS is fine.
+            boolean needFrames = "net/minecraft/client/KeyboardHandler".equals(className);
+            ClassWriter cw = needFrames
+                    ? new FrameClassWriter(cr, ClassWriter.COMPUTE_FRAMES, loader)
+                    : new ClassWriter(cr, ClassWriter.COMPUTE_MAXS);
             ClassVisitor cv = new ClassVisitor(Opcodes.ASM9, cw) {
                 @Override
                 public MethodVisitor visitMethod(int access, String name, String descriptor,
@@ -84,6 +93,27 @@ public final class GuiTransformer implements ClassFileTransformer {
                         };
                     }
 
+                    // Input capture: KeyboardHandler.keyPress/charTyped/textInput are
+                    // all void. Inject "if (InputCapture.shouldConsume()) return;" at
+                    // entry so keys don't reach the game while a menu is open.
+                    boolean hookConsume = ("keyPress".equals(name) || "charTyped".equals(name)
+                            || "textInput".equals(name));
+                    if (hookConsume) {
+                        hookCount[0]++;
+                        return new MethodVisitor(Opcodes.ASM9, mv) {
+                            @Override
+                            public void visitCode() {
+                                super.visitCode();
+                                mv.visitMethodInsn(Opcodes.INVOKESTATIC,
+                                        "barry/ui/InputCapture", "shouldConsume", "()Z", false);
+                                Label pass = new Label();
+                                mv.visitJumpInsn(Opcodes.IFEQ, pass);
+                                mv.visitInsn(Opcodes.RETURN);
+                                mv.visitLabel(pass);
+                            }
+                        };
+                    }
+
                     if (hookExtract || hookGuiRender) {
                         hookCount[0]++;
                         return new MethodVisitor(Opcodes.ASM9, mv) {
@@ -115,6 +145,31 @@ public final class GuiTransformer implements ClassFileTransformer {
         } catch (Throwable t) {
             System.err.println("[barry] Failed to transform " + shortName + ": " + t.getMessage());
             return null;
+        }
+    }
+
+    // ClassWriter whose getCommonSuperClass resolves types through the class's own
+    // (game) classloader and falls back to Object, so COMPUTE_FRAMES works inside
+    // the agent without the game classes on the agent classpath.
+    private static final class FrameClassWriter extends ClassWriter {
+        private final ClassLoader loader;
+        FrameClassWriter(ClassReader cr, int flags, ClassLoader loader) {
+            super(cr, flags);
+            this.loader = loader != null ? loader : getClass().getClassLoader();
+        }
+        @Override
+        protected String getCommonSuperClass(String type1, String type2) {
+            try {
+                Class<?> c1 = Class.forName(type1.replace('/', '.'), false, loader);
+                Class<?> c2 = Class.forName(type2.replace('/', '.'), false, loader);
+                if (c1.isAssignableFrom(c2)) return type1;
+                if (c2.isAssignableFrom(c1)) return type2;
+                if (c1.isInterface() || c2.isInterface()) return "java/lang/Object";
+                do { c1 = c1.getSuperclass(); } while (c1 != null && !c1.isAssignableFrom(c2));
+                return c1 == null ? "java/lang/Object" : c1.getName().replace('.', '/');
+            } catch (Throwable e) {
+                return "java/lang/Object";
+            }
         }
     }
 }

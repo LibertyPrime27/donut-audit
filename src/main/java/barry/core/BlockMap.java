@@ -49,9 +49,13 @@ public final class BlockMap {
         section[index] = conf;
         long packed = pos.packed();
 
-        // Track ore positions separately for rendering
+        // Track ore positions separately for rendering. Any identity-matched
+        // block is indexed regardless of dimension — the filter menu controls
+        // what actually shows, and the dimension gate here silently dropped valid
+        // hits (e.g. ancient_debris placed in the overworld, or any ore when
+        // dimension detection lagged).
         OreType ore = OreType.fromBlockName(conf.blockName());
-        if (ore != null && ore.isTarget(dimension) && conf.confidence() > 0) {
+        if (ore != null && conf.confidence() > 0) {
             orePositions.put(packed, conf);
         } else if (old != null) {
             // If this position was an ore but now isn't, remove it
