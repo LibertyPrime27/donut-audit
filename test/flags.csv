@@ -1,0 +1,57 @@
+milestone,component,check,status,detail
+M0,Main.list,JVM enumeration,PASS,Lists JVMs and filters by display name
+M0,Main.list,No MC fallback,PASS,Shows all JVMs when no MC found
+M0,build.gradle,JAR builds,PASS,gradlew jar succeeds
+M0,build.gradle,class version,PASS,major version 65 (Java 21) verified via javap
+M0,build.gradle,manifest,PASS,Agent-Class and Premain-Class set to barry.Bootstrap
+M0,jattach,binary runs,PASS,jattach.exe 2.2 prints usage on Windows
+M0,run.ps1,list command,PASS,Enumerates JVMs via java --add-modules jdk.attach
+M0,run.ps1,attach path,STUB,Requires running MC client — not tested
+M0,run.ps1,eject path,STUB,Requires running MC client — not tested
+M0,Bootstrap,agentmain entry,STUB,Never executed (no attach)
+M0,Bootstrap,class version gate,STUB,Never executed (no attach)
+M0,Bootstrap,eject path,STUB,Never executed (no attach)
+M0,Remap,Mojmap probe,STUB,Never executed (no game classloader)
+M0,Overlay,GLFW key polling,STUB,Never executed (no GLFW context)
+M0,Overlay,key-down edge detect,STUB,Never executed (no GLFW context)
+M1,BlockMap,put/get,UNVERIFIED,Compiles but no unit test
+M1,BlockMap,orePositions index,UNVERIFIED,Compiles but no unit test
+M1,ChunkDiff,temporal differencing,UNVERIFIED,Logic written but no test data
+M1,BlastProbe,processBlockUpdates,UNVERIFIED,Logic written but no blast data
+M1,MiningReveal,processBlockUpdates,UNVERIFIED,Logic written but no update data
+M1,CaveFollower,scan,UNVERIFIED,Logic written but no chunk data
+M1,NetherStrategy,onChunkLoad,STUB,Never executed
+M1,OverworldStrategy,onChunkLoad,STUB,Never executed
+M1,XrayEngine,routing,STUB,Never executed
+M1,PacketHook,position polling,STUB,Never executed (no game instance)
+M1,EspRenderer,buildRenderList,UNVERIFIED,Compiles but no BlockMap data
+M1,EspRenderer,GL rendering,STUB,renderWireBox is a skeleton
+M1,HudRenderer,text rendering,STUB,Requires GuiGraphics and Font
+M1,RenderHook,render loop,UNVERIFIED,Thread starts but never renders
+M2,seed_verdict,skipped,PASS,Documented in DECISIONS.md §11
+M3,Planner,nextTask spiral,UNVERIFIED,Logic written but no live BlockMap
+M3,Executor,executionLoop,STUB,Never executed (no game instance)
+M3,Executor,stuck detection,STUB,Never executed
+M3,Executor,game stubs,STUB,"sendLookAt, sendMoveForward, sendUseItem, sendStartBreaking, sendStopBreaking are empty"
+M3,Governor,PI controller,UNVERIFIED,Logic fixed (anti-windup) but no debris data
+M3,Governor,rolling rate,UNVERIFIED,Compiles but no recordDebris calls
+M3,Inventory,hotbar scan,STUB,Reflection never executed
+M5,Settings,singleton,PASS,Settings.get() returns instance
+M5,Settings,profile apply,UNVERIFIED,applyProfile() sets fields but not tested against gameplay
+M5,Settings,serialization,UNVERIFIED,toBase64/fromBase64 not round-trip tested
+M5,Profile,enum values,PASS,LEGIT/BALANCED/YOLO defined
+M6,RotationManager,GCD quantize,UNVERIFIED,Math matches formula but not tested against GrimAC
+M6,TimingManager,break delay,UNVERIFIED,Vanilla formula written but not compared to server
+M6,TimingManager,action delay,UNVERIFIED,Gamma distribution produces values but not profiled
+M6,WanderManager,Brownian drift,UNVERIFIED,Math compiles but not profiled
+M6,THREATMODEL.md,written,PASS,8 vectors documented
+M7,StaffDetector,composite scoring,UNVERIFIED,Signal inputs never called
+M7,StaffDetector,hysteresis,UNVERIFIED,Logic written but no signal data
+M7,PanicHandler,enterPanic timing,STUB,Never executed against a real client
+M7,PanicHandler,recovery transition,STUB,Never executed
+M7,KeybindRegistry,bind/conflict,UNVERIFIED,Logic written but no live key input
+M8,ClassHygiene,string scrub,STUB,scrub() never called with live strings
+M8,ClassHygiene,thread rename,STUB,sanitizeThreadNames never ran against game threads
+M8,ClassHygiene,selfCheck,STUB,Never ran in an attached context
+M8,ConfigScramble,XOR ops,UNVERIFIED,Math compiles but no round-trip test
+M8,SelfCheck,runAll,STUB,Never ran against a live JVM
