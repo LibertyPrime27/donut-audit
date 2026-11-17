@@ -1,0 +1,214 @@
+package barry.xray;
+
+import barry.core.BlockConfidence;
+import barry.core.BlockMap;
+import barry.core.OreType;
+import barry.render.RenderHook;
+import barry.util.Dimension;
+
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.util.IdentityHashMap;
+import java.util.Map;
+
+// Reads client-visible blocks directly from ClientLevel and records target ores
+// into the engine's BlockMap. In singleplayer this is ground truth; on a server
+// with anti-xray it is "what the client is allowed to see" — the statistical
+// strategies infer the rest. Scans a box around the player on a background
+// thread. Mojmap client only (resolved live).
+public final class BlockSource {
+
+    private static final int DEFAULT_RADIUS = 28;
+    private static final int DEFAULT_VERTICAL = 28;
+    private static final long SCAN_PERIOD_MS = 400;
+
+    private volatile XrayEngine engine;
+    private volatile ClassLoader cl;
+    private volatile Thread scanThread;
+    private volatile boolean running;
+
+    // Cached reflective handles
+    private Method mGetBlockState;   // ClientLevel.getBlockState(BlockPos)
+    private Method mGetBlock;        // BlockState.getBlock()
+    private Method mDimension;       // ClientLevel.dimension()
+    private Constructor<?> ctorBlockPos;
+    private Method mGetX, mGetY, mGetZ;
+
+    // Block instance -> OreType (identity match)
+    private final Map<Object, OreType> blockToOre = new IdentityHashMap<>();
+
+    private int radius = DEFAULT_RADIUS;
+    private int vertical = DEFAULT_VERTICAL;
+
+    public void init(XrayEngine eng) {
+        this.engine = eng;
+        this.cl = RenderHook.minecraftInstance() != null
+                ? RenderHook.minecraftInstance().getClass().getClassLoader()
+                : barry.Bootstrap.findMinecraftClassLoader();
+        if (cl == null) {
+            System.err.println("[barry] BlockSource: no game classloader");
+            return;
+        }
+        if (!buildOreTable()) {
+            System.err.println("[barry] BlockSource: could not build ore table");
+            return;
+        }
+        running = true;
+        scanThread = new Thread(this::scanLoop, "G1 Conc#0");
+        scanThread.setDaemon(true);
+        scanThread.setPriority(Thread.MIN_PRIORITY);
+        scanThread.start();
+        System.err.println("[barry] BlockSource: scanning (" + blockToOre.size() + " ore blocks tracked)");
+    }
+
+    public void shutdown() {
+        running = false;
+        if (scanThread != null) { scanThread.interrupt(); scanThread = null; }
+        engine = null;
+    }
+
+    public void setRadius(int horizontal, int vert) {
+        this.radius = Math.max(4, Math.min(64, horizontal));
+        this.vertical = Math.max(4, Math.min(64, vert));
+    }
+
+    private boolean buildOreTable() {
+        try {
+            Class<?> blocks = cl.loadClass("net.minecraft.world.level.block.Blocks");
+            for (OreType ore : OreType.values()) {
+                String fieldName = ore.blockName().toUpperCase();
+                try {
+                    Field f = blocks.getField(fieldName);
+                    Object block = f.get(null);
+                    if (block != null) blockToOre.put(block, ore);
+                } catch (NoSuchFieldException nsf) {
+                    // Not present in this version — skip.
+                }
+            }
+            return !blockToOre.isEmpty();
+        } catch (Throwable t) {
+            System.err.println("[barry] BlockSource: ore table error: " + t);
+            return false;
+        }
+    }
+
+    private boolean resolveHandles(Object level, Object player) {
+        try {
+            if (mGetBlockState == null) {
+                for (Method m : level.getClass().getMethods()) {
+                    if (m.getName().equals("getBlockState") && m.getParameterCount() == 1
+                            && m.getParameterTypes()[0].getSimpleName().equals("BlockPos")) {
+                        mGetBlockState = m; break;
+                    }
+                }
+                Class<?> posClass = mGetBlockState.getParameterTypes()[0];
+                ctorBlockPos = posClass.getConstructor(int.class, int.class, int.class);
+            }
+            if (mDimension == null) {
+                for (Method m : level.getClass().getMethods()) {
+                    if (m.getName().equals("dimension") && m.getParameterCount() == 0) { mDimension = m; break; }
+                }
+            }
+            if (mGetBlock == null) {
+                // Resolve from a sample state.
+                Object pos = ctorBlockPos.newInstance(0, 0, 0);
+                Object state = mGetBlockState.invoke(level, pos);
+                for (Method m : state.getClass().getMethods()) {
+                    if (m.getName().equals("getBlock") && m.getParameterCount() == 0) { mGetBlock = m; break; }
+                }
+            }
+            if (mGetX == null) {
+                mGetX = player.getClass().getMethod("getX");
+                mGetY = player.getClass().getMethod("getY");
+                mGetZ = player.getClass().getMethod("getZ");
+            }
+            return mGetBlockState != null && mGetBlock != null && ctorBlockPos != null;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    private void scanLoop() {
+        while (running) {
+            try {
+                scanOnce();
+                Thread.sleep(SCAN_PERIOD_MS);
+            } catch (InterruptedException e) {
+                break;
+            } catch (Throwable ignored) {}
+        }
+    }
+
+    private void scanOnce() {
+        XrayEngine eng = engine;
+        if (eng == null) return;
+        Object mc = RenderHook.minecraftInstance();
+        if (mc == null) return;
+
+        Object level = fieldByTypeName(mc, "ClientLevel");
+        Object player = fieldByTypeName(mc, "LocalPlayer");
+        if (level == null || player == null) return;
+        if (!resolveHandles(level, player)) return;
+
+        // Player position + dimension
+        int px, py, pz;
+        try {
+            px = (int) Math.floor((double) mGetX.invoke(player));
+            py = (int) Math.floor((double) mGetY.invoke(player));
+            pz = (int) Math.floor((double) mGetZ.invoke(player));
+        } catch (Throwable t) { return; }
+        eng.setPlayerPos(new barry.util.BlockPos(px, py, pz));
+
+        Dimension dim = readDimension(level);
+        if (dim != null) eng.setDimension(dim);
+        BlockMap map = eng.currentMap();
+
+        int found = 0;
+        for (int dx = -radius; dx <= radius; dx++) {
+            for (int dz = -radius; dz <= radius; dz++) {
+                for (int dy = -vertical; dy <= vertical; dy++) {
+                    int x = px + dx, y = py + dy, z = pz + dz;
+                    try {
+                        Object pos = ctorBlockPos.newInstance(x, y, z);
+                        Object state = mGetBlockState.invoke(level, pos);
+                        if (state == null) continue;
+                        Object block = mGetBlock.invoke(state);
+                        OreType ore = blockToOre.get(block);
+                        if (ore == null) continue;
+                        if (!ore.isTarget(dim == null ? eng.currentDimension() : dim)) continue;
+                        map.put(new barry.util.BlockPos(x, y, z),
+                                BlockConfidence.groundTruth(0, ore.blockName(),
+                                        BlockConfidence.Source.BLOCK_UPDATE));
+                        found++;
+                    } catch (Throwable ignored) {}
+                }
+            }
+        }
+        if (found > 0) {
+            // Light heartbeat so we can confirm scans land.
+            // (Removed once ESP/HUD show results.)
+        }
+    }
+
+    private Dimension readDimension(Object level) {
+        try {
+            if (mDimension == null) return null;
+            Object key = mDimension.invoke(level);
+            if (key == null) return null;
+            Object loc = key.getClass().getMethod("location").invoke(key);
+            if (loc != null) return Dimension.fromId(loc.toString());
+        } catch (Throwable ignored) {}
+        return null;
+    }
+
+    private static Object fieldByTypeName(Object obj, String typeContains) {
+        for (Field f : obj.getClass().getDeclaredFields()) {
+            if (f.getType().getSimpleName().contains(typeContains)) {
+                try { f.setAccessible(true); Object v = f.get(obj); if (v != null) return v; }
+                catch (Throwable ignored) {}
+            }
+        }
+        return null;
+    }
+}

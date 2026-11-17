@@ -6,13 +6,14 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class KeybindRegistry {
 
     public enum Action {
-        // MC 26.3 uses SDL3 for input — these are SDL_Scancode values.
-        OVERLAY_TOGGLE("Toggle overlay", 53),      // SDL_SCANCODE_GRAVE (backtick)
-        PANIC("Panic — hide everything", 76),      // SDL_SCANCODE_DELETE
-        ESP_TOGGLE("Toggle ESP rendering", 78),    // SDL_SCANCODE_PAGEDOWN
-        PROFILE_CYCLE("Cycle profile", 75),        // SDL_SCANCODE_PAGEUP
-        PAUSE_TOGGLE("Pause bot", 77),             // SDL_SCANCODE_END
-        CONFIG_DUMP("Dump config to stderr", 74);  // SDL_SCANCODE_HOME
+        // Canonical key codes are GLFW (1.21.x). Overlay translates to SDL
+        // scancodes at runtime when the client uses SDL input (26.x).
+        OVERLAY_TOGGLE("Toggle overlay", 96),      // GLFW_KEY_GRAVE_ACCENT (backtick)
+        PANIC("Panic — hide everything", 261),     // GLFW_KEY_DELETE
+        ESP_TOGGLE("Toggle ESP rendering", 267),   // GLFW_KEY_PAGE_DOWN
+        PROFILE_CYCLE("Cycle profile", 266),       // GLFW_KEY_PAGE_UP
+        PAUSE_TOGGLE("Pause bot", 269),            // GLFW_KEY_END
+        CONFIG_DUMP("Dump config to stderr", 268); // GLFW_KEY_HOME
 
         private final String description;
         private final int defaultKey;

@@ -8,7 +8,8 @@ import java.security.ProtectionDomain;
 public final class GuiTransformer implements ClassFileTransformer {
 
     private static final java.util.Set<String> TARGET_CLASSES = java.util.Set.of(
-            "net/minecraft/client/gui/Hud");
+            "net/minecraft/client/gui/Hud",   // 26.x: extract*(GuiGraphicsExtractor,...)
+            "net/minecraft/client/gui/Gui");  // 1.21.x: render(GuiGraphics,...)
 
     private static final int MAX_SUPPORTED_VERSION = 67; // ASM 9.7 ceiling (Java 23)
 
@@ -38,14 +39,15 @@ public final class GuiTransformer implements ClassFileTransformer {
                         String signature, String[] exceptions) {
                     MethodVisitor mv = super.visitMethod(access, name, descriptor, signature, exceptions);
 
-                    // MC 26.3 records the HUD into a GuiGraphicsExtractor. Gui.extractRenderState
-                    // calls Hud.extract*(GuiGraphicsExtractor, ...) directly, so hook those and
-                    // record our overlay through the same extractor (RenderHook throttles to
-                    // one draw per frame).
-                    boolean hookRender = name.startsWith("extract")
+                    // 26.x: Gui.extractRenderState calls Hud.extract*(GuiGraphicsExtractor,...)
+                    // directly — hook each and record through the extractor (arg 1).
+                    // 1.21.x: the HUD renders in Gui.render(GuiGraphics,...) — hook it (arg 1).
+                    boolean hookExtract = name.startsWith("extract")
                             && descriptor.startsWith("(Lnet/minecraft/client/gui/GuiGraphicsExtractor;");
+                    boolean hookGuiRender = "render".equals(name)
+                            && descriptor.startsWith("(Lnet/minecraft/client/gui/GuiGraphics;");
 
-                    if (hookRender) {
+                    if (hookExtract || hookGuiRender) {
                         hookCount[0]++;
                         return new MethodVisitor(Opcodes.ASM9, mv) {
                             @Override
@@ -64,7 +66,7 @@ public final class GuiTransformer implements ClassFileTransformer {
                 }
             };
             cr.accept(cv, 0);
-            System.err.println("[barry] " + shortName + " transform: " + hookCount[0] + " extract method(s) hooked.");
+            System.err.println("[barry] " + shortName + " transform: " + hookCount[0] + " render method(s) hooked.");
 
             byte[] result = cw.toByteArray();
             if (originalMajor > MAX_SUPPORTED_VERSION) {

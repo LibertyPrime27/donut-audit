@@ -18,6 +18,7 @@ public final class Bootstrap {
     private static final AtomicBoolean LOADED = new AtomicBoolean(false);
     private static final AtomicReference<Instrumentation> INST = new AtomicReference<>();
     private static volatile boolean ejecting = false;
+    private static volatile barry.xray.BlockSource blockSource;
 
     private Bootstrap() {}
 
@@ -64,6 +65,8 @@ public final class Bootstrap {
 
             XrayEngine eng = new XrayEngine();
             RenderHook.init(eng, inst);
+            blockSource = new barry.xray.BlockSource();
+            blockSource.init(eng);
 
             ClassHygiene.sanitizeThreadNames();
 
@@ -87,6 +90,7 @@ public final class Bootstrap {
         System.err.println("[barry] Ejecting...");
         try {
             Overlay.shutdown();
+            if (blockSource != null) { blockSource.shutdown(); blockSource = null; }
             RenderHook.shutdown();
             Remap.shutdown();
             ClassHygiene.scrub();

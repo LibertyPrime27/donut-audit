@@ -3,6 +3,7 @@ package barry.ui;
 import barry.Bootstrap;
 import barry.config.KeybindRegistry;
 import barry.config.KeybindRegistry.Action;
+import barry.render.RenderHook;
 
 import java.lang.instrument.Instrumentation;
 import java.lang.reflect.Method;
@@ -18,6 +19,7 @@ public final class Overlay {
     // Key debounce state
     private static volatile boolean lastToggleState = false;
     private static volatile boolean lastPanicState = false;
+    private static volatile boolean lastProbeState = false;
     private static volatile boolean diagLogged = false;
 
     private Overlay() {}
@@ -101,6 +103,13 @@ public final class Overlay {
                 System.err.println("[barry] Overlay " + (now ? "ON" : "OFF"));
             }
             lastToggleState = toggleDown;
+
+            // HOME triggers the one-shot block-source probe (version discovery).
+            boolean probeDown = isKeyPressed(kb.keyFor(Action.CONFIG_DUMP));
+            if (probeDown && !lastProbeState) {
+                barry.xray.BlockSourceProbe.dumpOnce();
+            }
+            lastProbeState = probeDown;
         } catch (Throwable ignored) {}
 
         // If visible, schedule render work on the game thread
@@ -109,12 +118,124 @@ public final class Overlay {
         }
     }
 
-    private static volatile Method cachedGetKeyboardState;
-    private static volatile boolean sdlNotLoadedLogged;
+    // Input backend. 1.21.x uses GLFW; 26.x uses SDL3. Detected once.
+    private enum Backend { UNKNOWN, GLFW, SDL, NONE }
+    private static volatile Backend backend = Backend.UNKNOWN;
 
-    // Find org.lwjgl.sdl.SDLKeyboard. The top-level class may not be loaded yet
-    // (MC drives input via SDL events), so if a scan misses it we locate any
-    // loaded org.lwjgl.sdl.* class and force-load SDLKeyboard via its loader.
+    // GLFW path
+    private static volatile Method cachedGlfwGetKey;
+    private static volatile Long cachedWindowHandle;
+    // SDL path
+    private static volatile Method cachedGetKeyboardState;
+
+    // GLFW keycode -> SDL scancode, for the keys we bind.
+    private static int glfwToSdlScancode(int glfw) {
+        switch (glfw) {
+            case 96:  return 53; // GRAVE
+            case 261: return 76; // DELETE
+            case 267: return 78; // PAGE_DOWN
+            case 266: return 75; // PAGE_UP
+            case 269: return 77; // END
+            case 268: return 74; // HOME
+            default:  return -1;
+        }
+    }
+
+    private static boolean isKeyPressed(int glfwKey) {
+        if (backend == Backend.UNKNOWN) backend = detectBackend();
+        try {
+            if (backend == Backend.GLFW) return glfwPressed(glfwKey);
+            if (backend == Backend.SDL) return sdlPressed(glfwToSdlScancode(glfwKey));
+        } catch (Throwable t) {
+            if (!diagLogged) { System.err.println("[barry] diag: isKeyPressed error: " + t); diagLogged = true; }
+        }
+        return false;
+    }
+
+    private static Backend detectBackend() {
+        // Prefer whichever input lib is actually loaded in the client.
+        if (findLoadedClass("org.lwjgl.glfw.GLFW") != null) {
+            System.err.println("[barry] Input backend: GLFW");
+            return Backend.GLFW;
+        }
+        if (findSdlKeyboardClass() != null) {
+            System.err.println("[barry] Input backend: SDL");
+            return Backend.SDL;
+        }
+        return Backend.UNKNOWN; // keep retrying until a lib loads
+    }
+
+    private static Class<?> findLoadedClass(String fqcn) {
+        try {
+            var inst = Bootstrap.instrumentation();
+            if (inst == null) return null;
+            for (Class<?> c : inst.getAllLoadedClasses()) {
+                if (fqcn.equals(c.getName())) return c;
+            }
+        } catch (Throwable ignored) {}
+        return null;
+    }
+
+    // --- GLFW (1.21.x) ---
+    private static boolean glfwPressed(int glfwKey) throws Exception {
+        if (cachedGlfwGetKey == null) {
+            Class<?> glfw = gameClassLoader.loadClass("org.lwjgl.glfw.GLFW");
+            cachedGlfwGetKey = glfw.getMethod("glfwGetKey", long.class, int.class);
+        }
+        if (cachedWindowHandle == null) {
+            cachedWindowHandle = resolveWindowHandle();
+            if (cachedWindowHandle == null) return false;
+        }
+        Object r = cachedGlfwGetKey.invoke(null, cachedWindowHandle.longValue(), glfwKey);
+        return r instanceof Integer i && i == 1; // GLFW_PRESS
+    }
+
+    private static Long resolveWindowHandle() {
+        try {
+            Object mc = RenderHook.minecraftInstance();
+            if (mc == null) return null;
+            for (var f : mc.getClass().getDeclaredFields()) {
+                if (f.getType().getSimpleName().contains("Window")) {
+                    f.setAccessible(true);
+                    Object win = f.get(mc);
+                    if (win == null) continue;
+                    // Window.getWindow() -> long handle, or a long field
+                    for (Method wm : win.getClass().getDeclaredMethods()) {
+                        if (wm.getReturnType() == long.class && wm.getParameterCount() == 0) {
+                            wm.setAccessible(true);
+                            long h = (long) wm.invoke(win);
+                            if (h != 0) return h;
+                        }
+                    }
+                    for (var wf : win.getClass().getDeclaredFields()) {
+                        if (wf.getType() == long.class) {
+                            wf.setAccessible(true);
+                            long h = wf.getLong(win);
+                            if (h != 0) return h;
+                        }
+                    }
+                }
+            }
+        } catch (Throwable ignored) {}
+        return null;
+    }
+
+    // --- SDL (26.x) ---
+    private static boolean sdlPressed(int scancode) throws Exception {
+        if (scancode < 0) return false;
+        if (cachedGetKeyboardState == null) {
+            Class<?> sdlKb = findSdlKeyboardClass();
+            if (sdlKb == null) return false;
+            cachedGetKeyboardState = sdlKb.getMethod("SDL_GetKeyboardState");
+        }
+        Object buf = cachedGetKeyboardState.invoke(null);
+        if (buf instanceof java.nio.ByteBuffer bb) {
+            if (scancode >= bb.limit()) return false;
+            return bb.get(scancode) != 0;
+        }
+        return false;
+    }
+
     private static Class<?> findSdlKeyboardClass() {
         try {
             var inst = Bootstrap.instrumentation();
@@ -132,34 +253,6 @@ public final class Overlay {
             }
         } catch (Throwable ignored) {}
         return null;
-    }
-
-    // MC 26.3 uses SDL3 for input. Key codes are SDL_Scancode values.
-    // SDL_GetKeyboardState() returns a ByteBuffer indexed by scancode;
-    // a nonzero byte means the key is currently down.
-    private static boolean isKeyPressed(int scancode) {
-        try {
-            if (cachedGetKeyboardState == null) {
-                Class<?> sdlKb = findSdlKeyboardClass();
-                if (sdlKb == null) {
-                    if (!sdlNotLoadedLogged) {
-                        System.err.println("[barry] diag: SDLKeyboard not yet available, retrying");
-                        sdlNotLoadedLogged = true;
-                    }
-                    return false;
-                }
-                cachedGetKeyboardState = sdlKb.getMethod("SDL_GetKeyboardState");
-                System.err.println("[barry] SDL keyboard polling ready.");
-            }
-            Object buf = cachedGetKeyboardState.invoke(null);
-            if (buf instanceof java.nio.ByteBuffer bb) {
-                if (scancode < 0 || scancode >= bb.limit()) return false;
-                return bb.get(scancode) != 0;
-            }
-        } catch (Throwable t) {
-            if (!diagLogged) { System.err.println("[barry] diag: isKeyPressed error: " + t); diagLogged = true; }
-        }
-        return false;
     }
 
     private static void renderOverlay() {
