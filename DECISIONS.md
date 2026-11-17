@@ -519,3 +519,52 @@ The bot navigates by blast-probing in an expanding pattern rather than
 beelining to predicted clusters. Estimated cost: ~15% more beds per debris
 found in the first pass of a new area, converging to zero as the area fills
 with ground-truth data. Acceptable.
+
+---
+
+## 12. Injector Choice — jattach v2.2
+
+**Decision: Use jattach (native Attach API binary) instead of hand-rolling
+the Java Attach API in Main.java.**
+
+### Evaluated
+
+| Injector | Technique | Platform | Traces | Verdict |
+|----------|-----------|----------|--------|---------|
+| **jattach v2.2** | Native HotSpot Dynamic Attach | Win/Linux/macOS | Standard attach handshake file | **Chosen** |
+| MinecraftInjectionPOC (Swofty) | ptrace + dlopen + JNI | Linux x86_64 only, needs root | Low (memfd trampoline, cleaned on unload) | Wrong platform |
+| MujinaBaseV2 (Lefraudeur) | Native DLL + JVMTI RetransformClasses | Windows only, MC 1.7.10, Java 8 | Author states "leaves a lot of traces (not fixable)" | Obsolete target, fragile |
+| Minecraft-Injection-Client (tylerkenyon) | — | — | — | Repo 404 (deleted/private) |
+| DarkClient (TheDarkSword) | Rust native DLL + JNI + inline hooks | Win/Linux, MC 26.x | TCP :7878 listener, inline hooks | Overkill, Rust toolchain, wrong MC version range |
+
+### Rationale
+
+jattach is the clear winner:
+1. **Single 144KB binary, no JDK required at runtime.** The old path spawned
+   a `java` process with `--add-modules jdk.attach`, which required a full
+   JDK on the machine. jattach works with just a JRE.
+2. **One-line invocation:** `jattach <pid> load instrument false <agent.jar>=attach`
+3. **Cross-platform:** Windows, Linux, macOS. Same binary format.
+4. **Maintained:** OpenJDK-adjacent project, v2.2 released Jan 2024.
+5. **Least trace:** Uses the standard HotSpot attach mechanism — the same
+   socket handshake `jcmd` and `jstack` use. No novel injection vector.
+6. **Least code:** Replaces all of Main.java's attach/eject logic. Main.java
+   is kept only for `list` (JVM enumeration with display-name filtering).
+
+### Impact on deferred exe
+
+The native exe deliverable (deferred from M0) is now less valuable. jattach
+already provides a native binary for the injection step. The only remaining
+value of a custom exe would be bundling list+attach into one binary with
+the agent JAR embedded. Low priority — the two-step `list` then `attach`
+workflow with jattach is adequate.
+
+### Class-file version fix (related)
+
+Discovered during review: `options.release` was pinned to 25 (build JDK).
+The Minecraft client runs Java 21 (class version 65). A Java 25 class file
+attaches cleanly but fails at class load on the target JVM — after the
+agent has already landed, which is the worst possible failure point.
+
+Fixed: `options.release.set(21)`. Bootstrap now checks `java.class.version`
+at attach time and refuses to load if < 65.
