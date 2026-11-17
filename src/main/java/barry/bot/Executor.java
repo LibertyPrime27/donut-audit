@@ -13,7 +13,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public final class Executor {
 
     private final XrayEngine engine;
-    private final Planner planner;
+    private volatile Planner planner;
     private final Governor governor;
     private final Inventory inventory;
 
@@ -86,11 +86,14 @@ public final class Executor {
                 // Safety checks
                 if (!safetyCheck()) {
                     System.err.println("[barry] Safety check failed, stopping.");
-                    stop();
+                    running.set(false);
                     return;
                 }
 
-                // Update position and stuck detection
+                if (engine.currentDimension() != planner.dimension()) {
+                    planner = new Planner(engine.currentMap(), engine.currentDimension());
+                }
+
                 BlockPos pos = engine.playerPos();
                 planner.setPlayerPos(pos);
                 trackDistance(pos);

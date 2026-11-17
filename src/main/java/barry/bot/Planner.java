@@ -71,6 +71,8 @@ public final class Planner {
         this.dimension = dimension;
     }
 
+    public Dimension dimension() { return dimension; }
+
     public void setPlayerPos(BlockPos pos) {
         this.currentPos = pos;
     }
