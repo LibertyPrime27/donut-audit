@@ -61,18 +61,18 @@ public final class PanicHandler {
             switch (state) {
                 case NORMAL -> {
                     if (staffAlert) {
-                        enterPanic();
+                        enterAlert();
                     }
                 }
                 case ALERT -> {
                     if (!staffAlert) {
                         beginRecovery();
                     } else if (detector.alertDuration() > dwellBeforeDisconnect * 1000L) {
-                        // Staff have been present too long — consider disconnecting
                         if (!disconnectTriggered) {
                             System.err.println("[barry] Staff dwell exceeded. Flagging for disconnect.");
                             disconnectTriggered = true;
                         }
+                        enterPanic();
                     }
                 }
                 case PANIC -> {
@@ -94,6 +94,14 @@ public final class PanicHandler {
         } finally {
             processing.set(false);
         }
+    }
+
+    private void enterAlert() {
+        state = State.ALERT;
+        Overlay.panic();
+        if (RenderHook.esp() != null) RenderHook.esp().setEnabled(false);
+        if (RenderHook.hud() != null) RenderHook.hud().setShowStats(false);
+        System.err.println("[barry] ALERT: staff detected. Score: " + detector.score());
     }
 
     private void enterPanic() {
