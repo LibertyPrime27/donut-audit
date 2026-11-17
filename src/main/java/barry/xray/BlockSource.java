@@ -183,6 +183,7 @@ public final class BlockSource {
         BlockMap map = eng.currentMap();
 
         int found = 0;
+        int[] typeCounts = new int[OreType.values().length]; // per-scan tally for anti-xray measurement
         for (int dx = -radius; dx <= radius; dx++) {
             for (int dz = -radius; dz <= radius; dz++) {
                 for (int dy = -vertical; dy <= vertical; dy++) {
@@ -214,6 +215,7 @@ public final class BlockSource {
                                 BlockConfidence.groundTruth(0, ore.blockName(),
                                         BlockConfidence.Source.BLOCK_UPDATE));
                         found++;
+                        typeCounts[ore.ordinal()]++;
                         if (seen.add(ore)) {
                             System.err.println("[barry] first detected: " + ore.blockName()
                                     + " @ " + x + "," + y + "," + z);
@@ -231,10 +233,19 @@ public final class BlockSource {
                 Object blk = mGetBlock.invoke(st);
                 feet = String.valueOf(blk) + (blockToOre.containsKey(blk) ? " [MATCHED]" : "");
             } catch (Throwable ignore) {}
+            // Per-type breakdown of what the client actually received (the
+            // anti-xray measurement): any tracked ore reading 0 in a biome where
+            // it should exist is being hidden before it reaches the client.
+            StringBuilder breakdown = new StringBuilder();
+            OreType[] ores = OreType.values();
+            for (int i = 0; i < typeCounts.length; i++) {
+                if (typeCounts[i] > 0) breakdown.append(' ').append(ores[i].blockName()).append('=').append(typeCounts[i]);
+            }
             System.err.println("[barry] scan @ " + px + "," + py + "," + pz
                     + " dim=" + (dim == null ? eng.currentDimension() : dim)
                     + " found=" + found + " types=" + seen.size()
                     + " feet=" + feet + " (r=" + radius + " v=" + vertical + ")");
+            System.err.println("[barry]   visible:" + (breakdown.length() == 0 ? " (none)" : breakdown));
         }
         if (found > 0) {
             // Light heartbeat so we can confirm scans land.
