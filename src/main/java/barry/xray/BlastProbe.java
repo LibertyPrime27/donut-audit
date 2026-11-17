@@ -81,7 +81,8 @@ public final class BlastProbe {
             }
         }
 
-        // Clean up old probes (timeout after 5 seconds — explosion should be instant)
+        for (Long key : resolvedProbes) pending.remove(key);
+
         long now = System.currentTimeMillis();
         pending.entrySet().removeIf(e -> now - e.getValue().timestamp > 5000);
     }
