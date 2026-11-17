@@ -460,3 +460,62 @@ These will be expanded in `THREATMODEL.md` after implementation confirms them:
 8. **README/code drift.** README claims tuff/stone cover, heightmap surface
    scramble, and rotating per-player noise. Code uses deepslate only,
    `xrayStatus()` says terrain hiding was removed, and rotation has no caller.
+
+---
+
+## 11. M2 Seed Verdict — Skip P4
+
+**Decision: P4 (seed as accelerator) is skipped.** P1's non-seed strategies
+meet the accuracy bar without it, and the seed carries unacceptable risk of
+silent degradation.
+
+### Evidence
+
+1. **Neither candidate seed is verified.** `-3312787754392566746` and
+   `6608149111735331168` are both unconfirmed. No source verifies either.
+   Structure-matching at observed bastion/fortress coordinates was not performed
+   (would require test-server access with both candidates loaded), so no
+   empirical data exists.
+
+2. **cubiomes does not confirm ancient debris support.** The xpple fork claims
+   "Ore generation (1.13+)" but neither its README nor its headers name ancient
+   debris. The upstream library explicitly does not do block-level generation
+   and warns of false positives. Without reading the ore .c source files (not
+   available via README/headers), debris prediction is unproven.
+
+3. **Generator version mismatch is undetectable.** The brief flags that 26.3
+   shipped worldgen changes. cubiomes' generator may be pinned to an older
+   version. A table built for 1.21 that is systematically wrong for 26.3
+   produces predictions that look plausible (they're in the right Y band, in
+   netherrack, in blobs of the right size) but are shifted. This failure mode
+   mimics a wrong seed and is not distinguishable from one without ground truth.
+
+4. **P1 already provides ground truth.** Blast probing and mining reveals
+   produce confidence=1.0 data with no seed. Chunk differencing provides
+   statistical confidence after 2-3 samples. The seed would only help by
+   reducing the number of probes needed to find the first debris in a new area
+   — a navigation optimization, not an accuracy improvement.
+
+5. **A wrong seed degrades the xray silently.** If the bot trusts seed
+   predictions and mines toward predicted clusters that don't exist, it wastes
+   time mining empty netherrack and produces a suspicious movement pattern
+   (heading to specific coordinates that contain nothing). This is worse than
+   no seed — it's an active harm.
+
+### What would change this
+
+- A verified seed (8/10 structure matches against observed coordinates)
+- Confirmed cubiomes debris generation with version-matched output
+- A test-server run comparing cubiomes predictions against actual debris
+
+None of these are available today. If they become available, P4 can be added
+as a navigation prior layer without changing any P1 code — the BlockMap's
+`SEED_PREDICT` source and the XrayEngine's `registerBlockState` are already
+wired for it.
+
+### Cost of skipping
+
+The bot navigates by blast-probing in an expanding pattern rather than
+beelining to predicted clusters. Estimated cost: ~15% more beds per debris
+found in the first pass of a new area, converging to zero as the area fills
+with ground-truth data. Acceptable.
