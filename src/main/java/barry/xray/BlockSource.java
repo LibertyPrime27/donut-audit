@@ -19,9 +19,9 @@ import java.util.Map;
 // thread. Mojmap client only (resolved live).
 public final class BlockSource {
 
-    private static final int DEFAULT_RADIUS = 28;
-    private static final int DEFAULT_VERTICAL = 28;
-    private static final long SCAN_PERIOD_MS = 400;
+    private static final int DEFAULT_RADIUS = 24;
+    private static final int DEFAULT_VERTICAL = 24;
+    private static final long SCAN_PERIOD_MS = 500;
 
     private volatile XrayEngine engine;
     private volatile ClassLoader cl;
@@ -33,6 +33,8 @@ public final class BlockSource {
     private Method mGetBlock;        // BlockState.getBlock()
     private Method mDimension;       // ClientLevel.dimension()
     private Constructor<?> ctorBlockPos;
+    private Object mutablePos;        // BlockPos.MutableBlockPos (reused)
+    private Method mSet;             // MutableBlockPos.set(int,int,int)
     private Method mGetX, mGetY, mGetZ;
 
     // Block instance -> OreType (identity match)
@@ -104,6 +106,12 @@ public final class BlockSource {
                 }
                 Class<?> posClass = mGetBlockState.getParameterTypes()[0];
                 ctorBlockPos = posClass.getConstructor(int.class, int.class, int.class);
+                // Reuse a MutableBlockPos to avoid per-block allocation.
+                try {
+                    Class<?> mut = cl.loadClass("net.minecraft.core.BlockPos$MutableBlockPos");
+                    mutablePos = mut.getConstructor().newInstance();
+                    mSet = mut.getMethod("set", int.class, int.class, int.class);
+                } catch (Throwable ignore) { mutablePos = null; mSet = null; }
             }
             if (mDimension == null) {
                 for (Method m : level.getClass().getMethods()) {
@@ -170,7 +178,8 @@ public final class BlockSource {
                 for (int dy = -vertical; dy <= vertical; dy++) {
                     int x = px + dx, y = py + dy, z = pz + dz;
                     try {
-                        Object pos = ctorBlockPos.newInstance(x, y, z);
+                        Object pos = (mutablePos != null) ? mSet.invoke(mutablePos, x, y, z)
+                                                          : ctorBlockPos.newInstance(x, y, z);
                         Object state = mGetBlockState.invoke(level, pos);
                         if (state == null) continue;
                         Object block = mGetBlock.invoke(state);

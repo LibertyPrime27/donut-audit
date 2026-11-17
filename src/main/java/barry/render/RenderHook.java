@@ -36,6 +36,7 @@ public final class RenderHook {
         if (Remap.isReady()) {
             installTransformer(inst);
         }
+        WorldRenderHook.init(eng);
 
         INSTALLED.set(true);
         System.err.println("[barry] RenderHook installed.");
@@ -43,6 +44,7 @@ public final class RenderHook {
 
     public static void shutdown() {
         INSTALLED.set(false);
+        WorldRenderHook.shutdown();
         if (renderThread != null) {
             renderThread.interrupt();
             renderThread = null;
@@ -205,6 +207,7 @@ public final class RenderHook {
                         + " (" + cachedDraw.getParameterCount() + " args)");
             }
 
+            // 3D ore outlines are rendered in the world (WorldRenderHook), not here.
             String[] lines = hudLines();
             int y = 4;
             for (int i = 0; i < lines.length; i++) {
@@ -296,17 +299,19 @@ public final class RenderHook {
             }
 
             // 1.21.x renders the HUD in Gui.render(GuiGraphics,...); 26.x moved it
-            // to Hud.extract*(GuiGraphicsExtractor,...). Retransform whichever exists.
+            // to Hud.extract*(GuiGraphicsExtractor,...). World outlines hook
+            // LevelRenderer.submitBlockOutline. Retransform whichever exist.
             int hooked = 0;
             for (String target : new String[]{
                     "net.minecraft.client.gui.Hud",
-                    "net.minecraft.client.gui.Gui"}) {
+                    "net.minecraft.client.gui.Gui",
+                    "net.minecraft.client.renderer.LevelRenderer"}) {
                 try {
                     inst.retransformClasses(cl.loadClass(target));
                     hooked++;
                 } catch (Throwable ignored) {}
             }
-            System.err.println("[barry] RenderHook: HUD hook installed (" + hooked + " target class(es))");
+            System.err.println("[barry] RenderHook: render hooks installed (" + hooked + " target class(es))");
         } catch (Throwable t) {
             System.err.println("[barry] RenderHook: transformer install failed: " + t.getMessage());
         }

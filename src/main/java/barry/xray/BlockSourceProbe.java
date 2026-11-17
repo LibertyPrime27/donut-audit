@@ -97,7 +97,154 @@ public final class BlockSourceProbe {
             System.err.println("[barry] probe: block-state path failed: " + t);
         }
 
+        // 5. ESP projection API: matrices, camera, window.
+        try {
+            dumpEspApi(mc);
+        } catch (Throwable t) {
+            System.err.println("[barry] probe: esp api failed: " + t);
+        }
+
+        // 6. World render API: LevelRenderer hook point + line-box helper.
+        try {
+            dumpWorldRenderApi(mc);
+        } catch (Throwable t) {
+            System.err.println("[barry] probe: world render api failed: " + t);
+        }
+
         System.err.println("[barry] ===== END PROBE =====");
+    }
+
+    private static void dumpWorldRenderApi(Object mc) {
+        ClassLoader cl = mc.getClass().getClassLoader();
+        Object lr = findFieldValueByTypeName(mc, "LevelRenderer");
+        System.err.println("[barry] levelRenderer = " + typeOf(lr));
+        if (lr != null) {
+            System.err.println("[barry] --- LevelRenderer methods taking SubmitNodeCollector ---");
+            for (Method m : lr.getClass().getDeclaredMethods()) {
+                for (Class<?> pt : m.getParameterTypes()) {
+                    if (pt.getSimpleName().contains("SubmitNodeCollector")
+                            || pt.getSimpleName().contains("Collector")) {
+                        System.err.println("[barry]   " + sig(m));
+                        break;
+                    }
+                }
+            }
+            System.err.println("[barry] --- all LevelRenderer methods (>=2 params) ---");
+            for (Method m : lr.getClass().getDeclaredMethods()) {
+                if (m.getParameterCount() >= 2 && !m.getName().startsWith("lambda$")) {
+                    System.err.println("[barry]   " + sig(m));
+                }
+            }
+            System.err.println("[barry] --- LevelRenderer static helpers (lineBox/shape) ---");
+            for (Method m : lr.getClass().getMethods()) {
+                if (!java.lang.reflect.Modifier.isStatic(m.getModifiers())) continue;
+                String n = m.getName().toLowerCase();
+                if (n.contains("line") || n.contains("shape") || n.contains("box")) {
+                    System.err.println("[barry]   static " + sig(m));
+                }
+            }
+        }
+        // Rendering toolkit availability on this version.
+        for (String fqcn : new String[]{
+                "com.mojang.blaze3d.vertex.Tesselator",
+                "com.mojang.blaze3d.vertex.PoseStack",
+                "net.minecraft.client.renderer.RenderType",
+                "net.minecraft.client.renderer.MultiBufferSource",
+                "com.mojang.blaze3d.vertex.VertexConsumer",
+                "net.minecraft.world.phys.AABB"}) {
+            try { cl.loadClass(fqcn); System.err.println("[barry]   present: " + fqcn); }
+            catch (Throwable t) { System.err.println("[barry]   MISSING: " + fqcn); }
+        }
+        // Deep-dump the submit API from submitHitOutline / submitBlockOutline params.
+        if (lr != null) {
+            for (Method m : lr.getClass().getDeclaredMethods()) {
+                if (m.getName().equals("submitHitOutline") || m.getName().equals("submitBlockOutline")) {
+                    System.err.println("[barry] >>> " + sig(m));
+                    for (Class<?> pt : m.getParameterTypes()) {
+                        dumpClassApi(pt, "line|box|outline|shape|submit|custom|order");
+                    }
+                }
+            }
+        }
+    }
+
+    private static void dumpClassApi(Class<?> c, String nameFilterRegex) {
+        if (c == null || c.isPrimitive() || c.getName().startsWith("java.")
+                || c.getName().startsWith("com.mojang.blaze3d.vertex.PoseStack")) return;
+        System.err.println("[barry]   === " + c.getName() + " ===");
+        try {
+            for (var ctor : c.getConstructors()) {
+                StringBuilder sb = new StringBuilder("ctor(");
+                Class<?>[] p = ctor.getParameterTypes();
+                for (int i = 0; i < p.length; i++) { if (i>0) sb.append(", "); sb.append(p[i].getSimpleName()); }
+                System.err.println("[barry]     " + sb.append(")"));
+            }
+            int shown = 0;
+            for (Method m : c.getMethods()) {
+                if (m.getDeclaringClass() == Object.class) continue;
+                String n = m.getName().toLowerCase();
+                if (n.matches(".*(" + nameFilterRegex + ").*")) {
+                    System.err.println("[barry]     " + sig(m));
+                    if (++shown > 30) break;
+                }
+            }
+        } catch (Throwable t) {
+            System.err.println("[barry]     (dump err: " + t + ")");
+        }
+    }
+
+    private static void dumpEspApi(Object mc) {
+        System.err.println("[barry] --- ESP: window ---");
+        Object window = findFieldValueByTypeName(mc, "Window");
+        if (window != null) {
+            for (Method m : window.getClass().getMethods()) {
+                String n = m.getName();
+                if (m.getParameterCount() == 0 && (n.contains("uiScaled") || n.contains("Width")
+                        || n.contains("Height") || n.contains("Scale"))) {
+                    System.err.println("[barry]   window." + sig(m));
+                }
+            }
+        }
+
+        System.err.println("[barry] --- ESP: gameRenderer matrix/camera methods ---");
+        Object gr = findFieldValueByTypeName(mc, "GameRenderer");
+        if (gr != null) {
+            for (Method m : gr.getClass().getMethods()) {
+                String rt = m.getReturnType().getSimpleName();
+                String n = m.getName();
+                if (rt.contains("Matrix") || rt.contains("Camera") || n.toLowerCase().contains("fov")
+                        || n.toLowerCase().contains("projection")) {
+                    System.err.println("[barry]   gameRenderer." + sig(m));
+                }
+            }
+            // camera + its rotation/position api
+            Object cam = invokeNoArgReturningTypeContains(gr, "Camera");
+            System.err.println("[barry]   camera = " + typeOf(cam));
+            if (cam != null) {
+                for (Method m : cam.getClass().getMethods()) {
+                    String n = m.getName();
+                    if (m.getParameterCount() == 0 && (n.contains("Rot") || n.contains("osition")
+                            || n.contains("Quaternion") || n.contains("rotation") || n.contains("Direction"))) {
+                        System.err.println("[barry]     camera." + sig(m));
+                    }
+                }
+            }
+        }
+
+        System.err.println("[barry] --- ESP: RenderSystem static matrix methods ---");
+        try {
+            Class<?> rs = mc.getClass().getClassLoader().loadClass("com.mojang.blaze3d.systems.RenderSystem");
+            for (Method m : rs.getMethods()) {
+                String rt = m.getReturnType().getSimpleName();
+                if (java.lang.reflect.Modifier.isStatic(m.getModifiers())
+                        && (rt.contains("Matrix") || m.getName().toLowerCase().contains("projection")
+                            || m.getName().toLowerCase().contains("modelview"))) {
+                    System.err.println("[barry]   RenderSystem." + sig(m));
+                }
+            }
+        } catch (Throwable t) {
+            System.err.println("[barry]   RenderSystem not found: " + t);
+        }
     }
 
     private static void dumpBlockStatePath(Object level, int x, int y, int z) throws Exception {

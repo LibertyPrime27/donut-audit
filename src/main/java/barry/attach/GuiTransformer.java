@@ -8,8 +8,9 @@ import java.security.ProtectionDomain;
 public final class GuiTransformer implements ClassFileTransformer {
 
     private static final java.util.Set<String> TARGET_CLASSES = java.util.Set.of(
-            "net/minecraft/client/gui/Hud",   // 26.x: extract*(GuiGraphicsExtractor,...)
-            "net/minecraft/client/gui/Gui");  // 1.21.x: render(GuiGraphics,...)
+            "net/minecraft/client/gui/Hud",            // 26.x: extract*(GuiGraphicsExtractor,...)
+            "net/minecraft/client/gui/Gui",            // 1.21.x: render(GuiGraphics,...)
+            "net/minecraft/client/renderer/LevelRenderer"); // 26.x: submitBlockOutline(...)
 
     private static final int MAX_SUPPORTED_VERSION = 67; // ASM 9.7 ceiling (Java 23)
 
@@ -46,6 +47,42 @@ public final class GuiTransformer implements ClassFileTransformer {
                             && descriptor.startsWith("(Lnet/minecraft/client/gui/GuiGraphicsExtractor;");
                     boolean hookGuiRender = "render".equals(name)
                             && descriptor.startsWith("(Lnet/minecraft/client/gui/GuiGraphics;");
+
+                    // 26.x world hook: submitEntities(PoseStack, LevelRenderState, SubmitNodeCollector)
+                    // runs every frame unconditionally. PoseStack=arg1, collector=arg3.
+                    boolean hookWorldOutline = "submitEntities".equals(name)
+                            && descriptor.startsWith("(Lcom/mojang/blaze3d/vertex/PoseStack;");
+                    if (hookWorldOutline) {
+                        hookCount[0]++;
+                        return new MethodVisitor(Opcodes.ASM9, mv) {
+                            @Override
+                            public void visitCode() {
+                                super.visitCode();
+                                mv.visitVarInsn(Opcodes.ALOAD, 1); // PoseStack
+                                mv.visitVarInsn(Opcodes.ALOAD, 3); // SubmitNodeCollector
+                                mv.visitMethodInsn(Opcodes.INVOKESTATIC,
+                                        "barry/render/WorldRenderHook", "onWorldOutline",
+                                        "(Ljava/lang/Object;Ljava/lang/Object;)V", false);
+                            }
+                        };
+                    }
+
+                    // Capture the game's line RenderType from submitHitOutline(pose, collector, RenderType, ...).
+                    boolean hookHitOutline = "submitHitOutline".equals(name)
+                            && descriptor.startsWith("(Lcom/mojang/blaze3d/vertex/PoseStack;");
+                    if (hookHitOutline) {
+                        hookCount[0]++;
+                        return new MethodVisitor(Opcodes.ASM9, mv) {
+                            @Override
+                            public void visitCode() {
+                                super.visitCode();
+                                mv.visitVarInsn(Opcodes.ALOAD, 3); // RenderType (arg index 2 -> slot 3)
+                                mv.visitMethodInsn(Opcodes.INVOKESTATIC,
+                                        "barry/render/WorldRenderHook", "captureLineRenderType",
+                                        "(Ljava/lang/Object;)V", false);
+                            }
+                        };
+                    }
 
                     if (hookExtract || hookGuiRender) {
                         hookCount[0]++;
