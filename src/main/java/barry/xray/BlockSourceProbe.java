@@ -27,10 +27,270 @@ public final class BlockSourceProbe {
         }
     }
 
+    // Everything needed to implement see-through outlines in one pass:
+    //  (A) device.backend concrete class -> the compiled-pipeline cache map (evict path)
+    //  (B) captured RenderType concrete class -> the RenderPipeline/Supplier field (clone path)
+    //  (C) RenderPipeline constructors + builder (how to make a fresh ALWAYS_PASS pipeline)
+    private static void dumpSeeThroughApi(ClassLoader cl) {
+        System.err.println("[barry] ===== SEE-THROUGH API =====");
+
+        // (A) backend concrete class
+        try {
+            Class<?> rs = cl.loadClass("com.mojang.blaze3d.systems.RenderSystem");
+            Object device = null;
+            for (Method m : rs.getMethods()) {
+                if (java.lang.reflect.Modifier.isStatic(m.getModifiers()) && m.getParameterCount() == 0
+                        && m.getReturnType().getSimpleName().contains("GpuDevice")) { device = m.invoke(null); break; }
+            }
+            if (device != null) {
+                Field bf = device.getClass().getDeclaredField("backend");
+                bf.setAccessible(true);
+                Object backend = bf.get(device);
+                if (backend != null) {
+                    Class<?> bc = backend.getClass();
+                    System.err.println("[barry] BACKEND = " + bc.getName());
+                    System.err.println("[barry] --- backend fields (Maps flagged with size) ---");
+                    for (Field f : bc.getDeclaredFields()) {
+                        String line = f.getName() + " : " + f.getType().getName();
+                        try {
+                            f.setAccessible(true);
+                            Object v = f.get(backend);
+                            if (v instanceof java.util.Map<?,?> mp) {
+                                line += "  (Map size=" + mp.size() + ")";
+                                // peek one key's type
+                                for (Object k : mp.keySet()) { line += " keyType=" + (k==null?"null":k.getClass().getName()); break; }
+                            }
+                        } catch (Throwable ignored) {}
+                        System.err.println("[barry]   " + line);
+                    }
+                    System.err.println("[barry] --- backend methods (compile/cache/pipeline/get/remove/clear) ---");
+                    for (Method m : bc.getMethods()) {
+                        String n = m.getName().toLowerCase();
+                        if (n.contains("compile") || n.contains("cache") || n.contains("pipeline")
+                                || n.contains("remove") || n.contains("clear") || n.contains("invalidate")) {
+                            System.err.println("[barry]   " + sig(m));
+                        }
+                    }
+                    // Deep-dump the recompiler: this manages compiled GL pipelines.
+                    try {
+                        Field rf = bc.getDeclaredField("recompiler");
+                        rf.setAccessible(true);
+                        Object rec = rf.get(backend);
+                        if (rec != null) {
+                            Class<?> rc = rec.getClass();
+                            System.err.println("[barry] RECOMPILER = " + rc.getName());
+                            System.err.println("[barry] --- recompiler fields (Maps flagged) ---");
+                            for (Field f : rc.getDeclaredFields()) {
+                                String line = f.getName() + " : " + f.getType().getName();
+                                try {
+                                    f.setAccessible(true);
+                                    Object v = f.get(rec);
+                                    if (v instanceof java.util.Map<?,?> mp) {
+                                        line += "  (Map size=" + mp.size() + ")";
+                                        for (Object k : mp.keySet()) { line += " keyType=" + (k==null?"null":k.getClass().getName()); break; }
+                                    } else if (v instanceof java.util.Collection<?> col) {
+                                        line += "  (Collection size=" + col.size() + ")";
+                                    }
+                                } catch (Throwable ignored) {}
+                                System.err.println("[barry]   " + line);
+                            }
+                            System.err.println("[barry] --- recompiler methods (get/compile/remove/clear/invalidate/pipeline) ---");
+                            for (Method m : rc.getMethods()) {
+                                String n = m.getName().toLowerCase();
+                                if (n.contains("compile") || n.contains("get") || n.contains("remove")
+                                        || n.contains("clear") || n.contains("invalidate") || n.contains("pipeline")) {
+                                    System.err.println("[barry]   " + sig(m));
+                                }
+                            }
+                        }
+                    } catch (Throwable t) { System.err.println("[barry] recompiler dump err: " + t); }
+                }
+            }
+        } catch (Throwable t) { System.err.println("[barry] backend dump err: " + t); }
+
+        // (B) captured RenderType concrete class: find the RenderPipeline (or Supplier) field
+        Object rt = barry.render.WorldRenderHook.capturedLineType();
+        if (rt != null) {
+            System.err.println("[barry] RENDERTYPE = " + rt.getClass().getName());
+            System.err.println("[barry] --- RenderType declared fields (self + supers) ---");
+            Object renderSetup = null;
+            for (Class<?> c = rt.getClass(); c != null && c != Object.class; c = c.getSuperclass()) {
+                System.err.println("[barry]   class " + c.getName());
+                for (Field f : c.getDeclaredFields()) {
+                    String line = f.getName() + " : " + f.getType().getName();
+                    try {
+                        f.setAccessible(true);
+                        Object v = f.get(rt);
+                        if (v != null) line += "  val=" + v.getClass().getName();
+                        if (v != null && f.getType().getSimpleName().equals("RenderSetup")) renderSetup = v;
+                    } catch (Throwable ignored) {}
+                    System.err.println("[barry]     " + line);
+                }
+            }
+            // RenderSetup holds the RenderPipeline — dump it so we can swap/clone.
+            if (renderSetup != null) {
+                System.err.println("[barry] RENDERSETUP = " + renderSetup.getClass().getName()
+                        + " isRecord=" + renderSetup.getClass().isRecord());
+                System.err.println("[barry] --- RenderSetup fields ---");
+                for (Field f : renderSetup.getClass().getDeclaredFields()) {
+                    String line = f.getName() + " : " + f.getType().getName();
+                    try { f.setAccessible(true); Object v = f.get(renderSetup); if (v != null) line += "  val=" + v.getClass().getName(); }
+                    catch (Throwable ignored) {}
+                    System.err.println("[barry]     " + line);
+                }
+                if (renderSetup.getClass().isRecord()) {
+                    System.err.println("[barry] --- RenderSetup record components ---");
+                    for (var rcmp : renderSetup.getClass().getRecordComponents())
+                        System.err.println("[barry]     " + rcmp.getName() + " : " + rcmp.getType().getName());
+                    System.err.println("[barry] --- RenderSetup constructors ---");
+                    for (var ctor : renderSetup.getClass().getDeclaredConstructors()) {
+                        StringBuilder sb = new StringBuilder("ctor(");
+                        Class<?>[] p = ctor.getParameterTypes();
+                        for (int i = 0; i < p.length; i++) { if (i>0) sb.append(", "); sb.append(p[i].getSimpleName()); }
+                        System.err.println("[barry]     " + sb.append(")"));
+                    }
+                }
+            }
+        }
+
+        // (C) RenderPipeline constructors + static builder methods
+        try {
+            Class<?> rp = cl.loadClass("com.mojang.renderpearl.api.pipeline.RenderPipeline");
+            System.err.println("[barry] --- RenderPipeline constructors ---");
+            for (var ctor : rp.getDeclaredConstructors()) {
+                StringBuilder sb = new StringBuilder("ctor(");
+                Class<?>[] p = ctor.getParameterTypes();
+                for (int i = 0; i < p.length; i++) { if (i>0) sb.append(", "); sb.append(p[i].getSimpleName()); }
+                System.err.println("[barry]     " + sb.append(")"));
+            }
+            System.err.println("[barry] --- RenderPipeline static/builder methods ---");
+            for (Method m : rp.getMethods()) {
+                String n = m.getName().toLowerCase();
+                if (java.lang.reflect.Modifier.isStatic(m.getModifiers())
+                        || n.contains("builder") || n.contains("tobuilder") || n.contains("copy")) {
+                    System.err.println("[barry]   " + sig(m));
+                }
+            }
+        } catch (Throwable t) { System.err.println("[barry] renderpipeline ctor dump err: " + t); }
+
+        System.err.println("[barry] ===== END SEE-THROUGH API =====");
+    }
+
+    private static void dumpDeviceApi(ClassLoader cl) {
+        try {
+            Class<?> rs = cl.loadClass("com.mojang.blaze3d.systems.RenderSystem");
+            Object device = null;
+            for (Method m : rs.getMethods()) {
+                if (java.lang.reflect.Modifier.isStatic(m.getModifiers()) && m.getParameterCount() == 0
+                        && m.getReturnType().getSimpleName().contains("GpuDevice")) {
+                    device = m.invoke(null); break;
+                }
+            }
+            if (device == null) { System.err.println("[barry] DEVICE: no getDevice"); return; }
+            Class<?> dc = device.getClass();
+            System.err.println("[barry] DEVICE: " + dc.getName());
+            System.err.println("[barry] --- device methods (pipeline/cache/clear/compile/precompile) ---");
+            for (Method m : dc.getMethods()) {
+                String n = m.getName().toLowerCase();
+                if (n.contains("pipeline") || n.contains("cache") || n.contains("clear")
+                        || n.contains("compile") || n.contains("preparepipeline")) {
+                    System.err.println("[barry]   " + sig(m));
+                }
+            }
+            System.err.println("[barry] --- ALL device declared fields ---");
+            for (Field f : dc.getDeclaredFields()) {
+                System.err.println("[barry]   " + f.getName() + " : " + f.getType().getName());
+            }
+            // Deep-dump pipelineBuilder (holds the compiled-pipeline cache).
+            Field pbF = dc.getDeclaredField("pipelineBuilder");
+            pbF.setAccessible(true);
+            Object pb = pbF.get(device);
+            if (pb != null) {
+                Class<?> pbc = pb.getClass();
+                System.err.println("[barry] === PipelineBuilder " + pbc.getName() + " ===");
+                System.err.println("[barry] --- PipelineBuilder fields ---");
+                for (Field f : pbc.getDeclaredFields()) {
+                    String line = f.getName() + " : " + f.getType().getName();
+                    try {
+                        f.setAccessible(true);
+                        Object v = f.get(pb);
+                        if (v instanceof java.util.Map<?,?> m) line += "  (Map size=" + m.size() + ")";
+                    } catch (Throwable ignored) {}
+                    System.err.println("[barry]   " + line);
+                }
+                System.err.println("[barry] --- PipelineBuilder methods (get/compile/pipeline/clear/remove) ---");
+                for (Method m : pbc.getMethods()) {
+                    String n = m.getName().toLowerCase();
+                    if (n.contains("pipeline") || n.contains("compile") || n.contains("get")
+                            || n.contains("clear") || n.contains("remove") || n.contains("invalidate")) {
+                        System.err.println("[barry]   " + sig(m));
+                    }
+                }
+            }
+        } catch (Throwable t) { System.err.println("[barry] device dump err: " + t); }
+    }
+
+    private static void dumpDepthApi() {
+        Object rt = barry.render.WorldRenderHook.capturedLineType();
+        if (rt == null) { System.err.println("[barry] DEPTH: no captured RenderType (look at a block, then HOME)"); return; }
+        try {
+            Object pipe = rt.getClass().getMethod("pipeline").invoke(rt);
+            Class<?> pc = pipe.getClass();
+            System.err.println("[barry] DEPTH: pipeline = " + pc.getName());
+            System.err.println("[barry] --- RenderPipeline declared fields ---");
+            for (Field f : pc.getDeclaredFields()) {
+                System.err.println("[barry]   " + f.getName() + " : " + f.getType().getSimpleName()
+                        + (java.lang.reflect.Modifier.isFinal(f.getModifiers()) ? " (final)" : ""));
+            }
+            Object dss = pc.getMethod("getDepthStencilState").invoke(pipe);
+            System.err.println("[barry] DEPTH: depthStencilState = " + (dss == null ? "null" : dss.getClass().getName()));
+            if (dss != null) {
+                Class<?> dc = dss.getClass();
+                System.err.println("[barry] DEPTH: isRecord=" + dc.isRecord());
+                if (dc.isRecord()) {
+                    for (var rc : dc.getRecordComponents()) {
+                        Object val = null;
+                        try { val = rc.getAccessor().invoke(dss); } catch (Throwable ignored) {}
+                        System.err.println("[barry]   comp " + rc.getName() + " : " + rc.getType().getSimpleName() + " = " + val);
+                    }
+                }
+                System.err.println("[barry] --- DepthStencilState declared fields ---");
+                for (Field f : dc.getDeclaredFields()) {
+                    System.err.println("[barry]   " + f.getName() + " : " + f.getType().getSimpleName()
+                            + (java.lang.reflect.Modifier.isStatic(f.getModifiers()) ? " (static)" : "")
+                            + (java.lang.reflect.Modifier.isFinal(f.getModifiers()) ? " (final)" : ""));
+                }
+                System.err.println("[barry] --- DepthStencilState constructors ---");
+                for (var ctor : dc.getConstructors()) {
+                    StringBuilder sb = new StringBuilder("ctor(");
+                    Class<?>[] p = ctor.getParameterTypes();
+                    for (int i = 0; i < p.length; i++) { if (i>0) sb.append(", "); sb.append(p[i].getSimpleName()); }
+                    System.err.println("[barry]   " + sb.append(")"));
+                }
+            }
+            // DepthTestFunction-like enum: find a field/comp whose type name has "Depth"/"Function"/"Compare"
+            System.err.println("[barry] --- depth-function enum candidates ---");
+            if (dss != null) {
+                for (Field f : dss.getClass().getDeclaredFields()) {
+                    String tn = f.getType().getSimpleName();
+                    if (f.getType().isEnum() || tn.contains("Function") || tn.contains("Compare") || tn.contains("Depth")) {
+                        Class<?> et = f.getType();
+                        System.err.println("[barry]   field " + f.getName() + " type " + et.getName() + (et.isEnum() ? " [ENUM]" : ""));
+                        if (et.isEnum()) for (Object c : et.getEnumConstants()) System.err.println("[barry]     const " + c);
+                    }
+                }
+            }
+        } catch (Throwable t) { System.err.println("[barry] depth dump err: " + t); }
+    }
+
     private static void dump() {
         System.err.println("[barry] ===== BLOCK SOURCE PROBE =====");
         Object mc = RenderHook.minecraftInstance();
         if (mc == null) { System.err.println("[barry] probe: no mc"); return; }
+
+        try { dumpSeeThroughApi(mc.getClass().getClassLoader()); } catch (Throwable t) { System.err.println("[barry] seethrough probe err: " + t); }
+        try { dumpDepthApi(); } catch (Throwable t) { System.err.println("[barry] depth probe err: " + t); }
+        try { dumpDeviceApi(mc.getClass().getClassLoader()); } catch (Throwable t) { System.err.println("[barry] device probe err: " + t); }
 
         // 1. level field on Minecraft (ClientLevel)
         Object level = findFieldValueByTypeName(mc, "ClientLevel");
