@@ -217,21 +217,25 @@ public final class RenderHook {
                 y += 10;
             }
 
-            // Player ESP HUD section
-            if (barry.esp.PlayerTracker.isEnabled()) {
-                var players = barry.esp.PlayerTracker.tracked();
-                if (!players.isEmpty()) {
+            // Entity/player ESP HUD section
+            if (barry.esp.EntityTypes.enabledCount() > 0) {
+                var ents = barry.esp.EntityTracker.tracked();
+                if (!ents.isEmpty()) {
                     y += 2;
-                    drawStr(graphics, "PLAYERS (" + players.size() + ")", 4, y, 0xFFFF6666);
+                    drawStr(graphics, "ENTITIES (" + ents.size() + ")", 4, y, 0xFFFF6666);
                     y += 10;
                     int shown = 0;
-                    for (var p : players) {
+                    for (var e : ents) {
                         if (shown >= 8) break;
-                        String line = String.format("  %-16s %dm  %.0f HP",
-                                p.name(), (int) p.distance(), p.health());
-                        drawStr(graphics, line, 4, y, p.color());
+                        String line = e.living()
+                            ? String.format("  %-16s %dm  %.0f HP", e.label(), (int) e.distance(), e.health())
+                            : String.format("  %-16s %dm", e.label(), (int) e.distance());
+                        drawStr(graphics, line, 4, y, e.color());
                         y += 10;
                         shown++;
+                    }
+                    if (ents.size() > shown) {
+                        drawStr(graphics, "  …+" + (ents.size() - shown) + " more", 4, y, 0xFF888888);
                     }
                 }
             }
@@ -239,9 +243,10 @@ public final class RenderHook {
             // Menu panels (one screen at a time).
             if (Overlay.isVisible()) {
                 switch (barry.ui.Menu.screen()) {
-                    case MAIN:   drawMainMenu(graphics); break;
-                    case BLOCKS: drawFilterMenu(graphics); break;
-                    case KEYS:   drawSettingsMenu(graphics); break;
+                    case MAIN:     drawMainMenu(graphics); break;
+                    case BLOCKS:   drawFilterMenu(graphics); break;
+                    case ENTITIES: drawEntityMenu(graphics); break;
+                    case KEYS:     drawSettingsMenu(graphics); break;
                     default: break;
                 }
             }
@@ -265,11 +270,12 @@ public final class RenderHook {
             if (selected) fillRect(graphics, x - 4, y - 1, x + w - 2, y + rowH - 2, 0x40FFFFFF);
             String label = items[i];
             if (i == 1) label = label + ": " + (barry.ui.Fullbright.isOn() ? "ON" : "OFF");
-            if (i == 2) label = label + ": " + (barry.esp.PlayerTracker.isEnabled() ? "ON" : "OFF");
+            if (i == 2) label = label + ": " + (barry.esp.EntityTypes.isEnabled("player") ? "ON" : "OFF");
+            if (i == 3) label = label + " (" + barry.esp.EntityTypes.enabledCount() + ")";
             String prefix = selected ? "> " : "  ";
             int col = selected ? 0xFFFFFFFF : 0xFFCCCCCC;
             if (i == 1 && barry.ui.Fullbright.isOn() && !selected) col = 0xFF66FF66;
-            if (i == 2 && barry.esp.PlayerTracker.isEnabled() && !selected) col = 0xFFFF6666;
+            if (i == 2 && barry.esp.EntityTypes.isEnabled("player") && !selected) col = 0xFFFF6666;
             drawStr(graphics, prefix + label, x, y, col);
             y += rowH;
         }
@@ -323,6 +329,48 @@ public final class RenderHook {
             drawStr(graphics, prefix + box + o.blockName(), x, y, col);
             y += rowH;
         }
+    }
+
+    private static void drawEntityMenu(Object graphics) {
+        java.util.List<String> vis = barry.ui.EntityFilterMenu.visible();
+        String query = barry.ui.EntityFilterMenu.query();
+        int x = 140, top = 24, w = 240, rowH = 10;
+        final int WINDOW = 14; // visible rows (list can be ~140 long)
+        int rows = Math.min(Math.max(vis.size(), 1), WINDOW);
+        int h = (rows + 3) * rowH + 8;
+        fillRect(graphics, x - 6, top - 6, x + w, top + h, 0xC0101014);
+        fillRect(graphics, x - 6, top - 6, x + w, top - 5, 0xFFFF9955);
+        fillRect(graphics, x - 6, top + h - 1, x + w, top + h, 0xFFFF9955);
+
+        int y = top;
+        drawStr(graphics, "ENTITIES  Esc:back  type:search  Enter:toggle", x, y, 0xFFFF9955);
+        y += rowH;
+        String caret = ((System.currentTimeMillis() / 500) % 2 == 0) ? "_" : " ";
+        drawStr(graphics, "search: " + query + caret, x, y, 0xFFFFFF88);
+        y += rowH;
+
+        int sel = barry.ui.EntityFilterMenu.selected();
+        if (vis.isEmpty()) {
+            drawStr(graphics, "  (no entities match)", x, y, 0xFF888888);
+            return;
+        }
+        // Scroll window so the selected row stays visible.
+        int start = Math.max(0, Math.min(sel - WINDOW / 2, vis.size() - WINDOW));
+        if (start < 0) start = 0;
+        int end = Math.min(vis.size(), start + WINDOW);
+        for (int i = start; i < end; i++) {
+            String name = vis.get(i);
+            boolean on = barry.esp.EntityTypes.isEnabled(name);
+            boolean selected = (i == sel);
+            if (selected) fillRect(graphics, x - 4, y - 1, x + w - 2, y + rowH - 2, 0x40FFFFFF);
+            String box = on ? "[x] " : "[ ] ";
+            String prefix = selected ? "> " : "  ";
+            int col = selected ? 0xFFFFFFFF : (on ? barry.esp.EntityTypes.color(name) : 0xFF888888);
+            drawStr(graphics, prefix + box + name, x, y, col);
+            y += rowH;
+        }
+        // Scroll indicator.
+        drawStr(graphics, "  [" + (sel + 1) + "/" + vis.size() + "]", x, y, 0xFF777777);
     }
 
     private static void drawSettingsMenu(Object graphics) {

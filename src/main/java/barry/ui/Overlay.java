@@ -56,7 +56,8 @@ public final class Overlay {
     public static void shutdown() {
         INITIALIZED.set(false);
         VISIBLE.set(false);
-        barry.esp.PlayerTracker.reset();
+        barry.esp.EntityTracker.reset();
+        barry.esp.EntityTypes.reset();
         if (tickThread != null) {
             tickThread.interrupt();
             tickThread = null;
@@ -78,7 +79,7 @@ public final class Overlay {
         VISIBLE.set(false);
         Menu.close();
         Fullbright.set(false); // revert to the vanilla look on panic
-        barry.esp.PlayerTracker.setEnabled(false);
+        barry.esp.EntityTypes.disableAll(); // kill all entity/player ESP
     }
 
     private static void tickLoop() {
@@ -158,6 +159,11 @@ public final class Overlay {
                             if (dnEdge) FilterMenu.down();
                             if (tgEdge) FilterMenu.toggleSelected();
                             break;
+                        case ENTITIES:
+                            if (upEdge) EntityFilterMenu.up();
+                            if (dnEdge) EntityFilterMenu.down();
+                            if (tgEdge) EntityFilterMenu.toggleSelected();
+                            break;
                         case KEYS:
                             if (upEdge) SettingsMenu.up();
                             if (dnEdge) SettingsMenu.down();
@@ -183,7 +189,7 @@ public final class Overlay {
             // Block selector search box (only on the BLOCKS screen): type to
             // filter, Backspace to delete, Enter to toggle. The input-capture hook
             // keeps these keys out of the game while the menu is open.
-            if (Menu.screen() == Menu.Screen.BLOCKS) {
+            if (Menu.screen() == Menu.Screen.BLOCKS || Menu.screen() == Menu.Screen.ENTITIES) {
                 pollSearchInput();
             } else {
                 searchPrev = null;
@@ -204,9 +210,9 @@ public final class Overlay {
             Fullbright.apply();
         } catch (Throwable ignored) {}
 
-        // Player ESP scan (runs at its own 10 Hz internal rate).
+        // Entity/player ESP scan (runs at its own 10 Hz internal rate).
         if (VISIBLE.get()) {
-            barry.esp.PlayerTracker.scan();
+            barry.esp.EntityTracker.scan();
         }
 
         // If visible, schedule render work on the game thread
@@ -343,14 +349,17 @@ public final class Overlay {
     }
 
     private static void handleSearchKey(int sc) {
-        if (sc >= 4 && sc <= 29) { FilterMenu.appendChar((char) ('a' + (sc - 4))); return; }
-        if (sc >= 30 && sc <= 38) { FilterMenu.appendChar((char) ('1' + (sc - 30))); return; }
-        switch (sc) {
-            case 39: FilterMenu.appendChar('0'); break;
-            case 42: FilterMenu.backspace(); break;      // Backspace
-            // Enter (toggle) and Esc (back) handled in the nav block; arrows/F6 elsewhere.
-            default: break;
-        }
+        boolean entities = Menu.screen() == Menu.Screen.ENTITIES;
+        char c;
+        if (sc >= 4 && sc <= 29) c = (char) ('a' + (sc - 4));
+        else if (sc >= 30 && sc <= 38) c = (char) ('1' + (sc - 30));
+        else if (sc == 39) c = '0';
+        else if (sc == 45) c = '_'; // '-' key → underscore (entity names use it)
+        else if (sc == 42) { // Backspace
+            if (entities) EntityFilterMenu.backspace(); else FilterMenu.backspace();
+            return;
+        } else return; // Enter/Esc handled in nav block; arrows/F6 elsewhere
+        if (entities) EntityFilterMenu.appendChar(c); else FilterMenu.appendChar(c);
     }
 
     private static String scancodeName(int sc) {

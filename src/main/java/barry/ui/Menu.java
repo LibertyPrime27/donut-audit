@@ -5,9 +5,9 @@ package barry.ui;
 // Overlay routes input and RenderHook draws based on the current screen.
 public final class Menu {
 
-    public enum Screen { NONE, MAIN, BLOCKS, KEYS }
+    public enum Screen { NONE, MAIN, BLOCKS, ENTITIES, KEYS }
 
-    public static final String[] MAIN_ITEMS = { "Block Selector", "Fullbright", "Player ESP", "Keybinds" };
+    public static final String[] MAIN_ITEMS = { "Block Selector", "Fullbright", "Player ESP", "Entities", "Keybinds" };
 
     private static volatile Screen screen = Screen.NONE;
     private static volatile int mainSel;
@@ -26,7 +26,8 @@ public final class Menu {
 
     // Back: submenu -> MAIN, MAIN -> closed.
     public static void back() {
-        screen = (screen == Screen.BLOCKS || screen == Screen.KEYS) ? Screen.MAIN : Screen.NONE;
+        screen = (screen == Screen.BLOCKS || screen == Screen.ENTITIES || screen == Screen.KEYS)
+                ? Screen.MAIN : Screen.NONE;
     }
 
     public static void mainUp() {
@@ -42,8 +43,9 @@ public final class Menu {
         switch (mainSel) {
             case 0: FilterMenu.reset(); screen = Screen.BLOCKS; break;
             case 1: Fullbright.toggle(); break;
-            case 2: barry.esp.PlayerTracker.toggle(); break;
-            case 3: screen = Screen.KEYS; break;
+            case 2: barry.esp.EntityTypes.toggle("player"); break;
+            case 3: EntityFilterMenu.reset(); screen = Screen.ENTITIES; break;
+            case 4: screen = Screen.KEYS; break;
             default: break;
         }
     }
