@@ -15,6 +15,7 @@ public final class EntityTracker {
 
     private static volatile List<TrackedEntity> tracked = List.of();
     private static volatile long lastScan;
+    private static volatile long lastDiag;
 
     // Cached reflection handles.
     private static volatile Method mEntitiesForRendering;
@@ -60,9 +61,15 @@ public final class EntityTracker {
             if (self != null) { sx = entityX(self); sy = entityY(self); sz = entityZ(self); }
 
             List<TrackedEntity> result = new ArrayList<>();
+            int raw = 0; String sampleType = null, samplePath = null;
             for (Object e : entities) {
+                raw++;
                 Object type = entityType(e);
                 String path = EntityTypes.typePath(type);
+                if (sampleType == null && type != null) {
+                    sampleType = type.getClass().getSimpleName();
+                    samplePath = path;
+                }
                 if (path == null || !EntityTypes.isEnabled(path)) continue;
 
                 boolean player = "player".equals(path);
@@ -95,6 +102,14 @@ public final class EntityTracker {
             result.sort(Comparator.comparingDouble(TrackedEntity::distance));
             if (result.size() > 400) result = result.subList(0, 400);
             tracked = result;
+
+            if (now - lastDiag > 2000) {
+                lastDiag = now;
+                System.err.println("[barry] entity diag: level=" + level.getClass().getSimpleName()
+                        + " method=" + (mEntitiesForRendering != null ? mEntitiesForRendering.getName() : "null")
+                        + " raw=" + raw + " matched=" + result.size()
+                        + " sampleType=" + sampleType + " samplePath=" + samplePath);
+            }
         } catch (Throwable t) {
             // transient (world unloading, etc.) — keep last list, don't spam
         }

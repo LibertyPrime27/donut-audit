@@ -309,7 +309,7 @@ public final class RenderHook {
         fillRect(graphics, x - 6, top + h - 1, x + w, top + h, 0xFF55FF55);
 
         int y = top;
-        drawStr(graphics, "BLOCKS  Esc:back  type:search  Enter:toggle", x, y, 0xFF55FF55);
+        drawStr(graphics, "BLOCKS  Esc:back  type:search  Space/Enter:toggle", x, y, 0xFF55FF55);
         y += rowH;
         // Search box line.
         String caret = ((System.currentTimeMillis() / 500) % 2 == 0) ? "_" : " ";
@@ -346,7 +346,7 @@ public final class RenderHook {
         fillRect(graphics, x - 6, top + h - 1, x + w, top + h, 0xFFFF9955);
 
         int y = top;
-        drawStr(graphics, "ENTITIES  Esc:back  type:search  Enter:toggle", x, y, 0xFFFF9955);
+        drawStr(graphics, "ENTITIES  Esc:back  type:search  Space/Enter:toggle", x, y, 0xFFFF9955);
         y += rowH;
         String caret = ((System.currentTimeMillis() / 500) % 2 == 0) ? "_" : " ";
         drawStr(graphics, "search: " + query + caret, x, y, 0xFFFFFF88);

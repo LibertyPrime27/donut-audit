@@ -99,9 +99,12 @@ public final class EntityTypes {
             if (reg == null || entityType == null) return null;
             if (mGetKey == null) {
                 for (Method m : reg.getClass().getMethods()) {
-                    if ("getKey".equals(m.getName()) && m.getParameterCount() == 1
-                            && m.getReturnType().getSimpleName().equals("ResourceLocation")) {
-                        mGetKey = m; break;
+                    if ("getKey".equals(m.getName()) && m.getParameterCount() == 1) {
+                        String rt = m.getReturnType().getSimpleName();
+                        // 26.3 renamed ResourceLocation -> Identifier.
+                        if (rt.equals("ResourceLocation") || rt.equals("Identifier")) {
+                            mGetKey = m; break;
+                        }
                     }
                 }
             }

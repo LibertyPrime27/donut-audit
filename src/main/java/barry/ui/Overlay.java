@@ -141,8 +141,9 @@ public final class Overlay {
             if (Menu.isOpen()) {
                 boolean up = isActionPressed(Action.MENU_UP);
                 boolean dn = isActionPressed(Action.MENU_DOWN);
-                // Activate = RIGHT (bindable) OR LEFT OR ENTER — all select/toggle.
-                boolean tg = isActionPressed(Action.MENU_TOGGLE_ITEM) || sdlPressed(80) || sdlPressed(40);
+                // Activate = RIGHT (bindable) OR LEFT OR ENTER OR SPACE — all select/toggle.
+                boolean tg = isActionPressed(Action.MENU_TOGGLE_ITEM) || sdlPressed(80)
+                        || sdlPressed(40) || sdlPressed(44);
                 boolean upEdge = up && !lastMenuUp;
                 boolean dnEdge = dn && !lastMenuDown;
                 boolean tgEdge = tg && !lastMenuToggleItem;
