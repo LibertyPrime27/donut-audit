@@ -68,6 +68,12 @@ public enum OreType {
         return y >= minY && y <= maxY;
     }
 
+    public static int enabledCount() {
+        int n = 0;
+        for (OreType t : values()) if (t.enabled) n++;
+        return n;
+    }
+
     public static OreType fromBlockName(String name) {
         if (name == null) return null;
         // Exact match first so e.g. "ender_chest" doesn't match "chest".

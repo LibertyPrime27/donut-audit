@@ -36,7 +36,10 @@ public final class EntityTypes {
     }
     public static void toggle(String name) {
         if (name == null) return;
-        if (!enabled.remove(name)) enabled.add(name);
+        boolean on;
+        if (enabled.remove(name)) on = false; else { enabled.add(name); on = true; }
+        System.err.println("[barry] entity type " + name + " -> " + (on ? "ON" : "OFF")
+                + " (enabled=" + enabled.size() + ")");
     }
     public static int enabledCount() { return enabled.size(); }
 

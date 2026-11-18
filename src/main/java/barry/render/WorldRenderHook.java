@@ -25,7 +25,9 @@ public final class WorldRenderHook {
     private static volatile Object linesRenderType;   // RenderType for line outlines
     private static volatile Object capturedLineType;  // grabbed from submitHitOutline
     private static Method mSubmitShapeOutline;
-    private static Method mPush, mTranslate, mPop, mScale;
+    private static Method mPush, mTranslate, mPop;
+    private static volatile Method mShapesBox;     // Shapes.box(6 doubles) -> VoxelShape
+    private static final java.util.Map<Integer, Object> entityShapeCache = new java.util.concurrent.ConcurrentHashMap<>();
     private static Object camera;            // Camera (re-fetched each frame)
     private static Method mMainCamera, mPosition;
     private static java.lang.reflect.Field vecX, vecY, vecZ;
@@ -98,6 +100,8 @@ public final class WorldRenderHook {
                         + " debrisInRange=" + debrisInRange
                         + " debrisEnabled=" + OreType.ANCIENT_DEBRIS.isEnabled()
                         + " entities=" + entityCount
+                        + " enTypes=" + barry.esp.EntityTypes.enabledCount()
+                        + " trk=" + barry.esp.EntityTracker.tracked().size()
                         + " map=" + eng.currentDimension());
             }
         } catch (Throwable t) {
@@ -109,31 +113,53 @@ public final class WorldRenderHook {
         }
     }
 
-    // Draw see-through outlines for every tracked entity, sizing the unit cube to
-    // each entity's hitbox via PoseStack.scale. Returns the number rendered.
+    // Draw see-through outlines for every tracked entity. Uses a per-size
+    // VoxelShape (same submit path as the ore outlines, which is known to work)
+    // rather than scaling the unit cube.
     private static int renderEntities(Object pose, Object collector,
                                       double camX, double camY, double camZ) {
         try {
-            if (blockShape == null || linesRenderType == null || mScale == null) return 0;
+            if (linesRenderType == null) return 0;
 
             var ents = barry.esp.EntityTracker.tracked();
             int count = 0;
             for (var e : ents) {
                 if (e.distance() > 256) continue;
-                float w = (float) (e.width() > 0 ? e.width() : 0.6);
-                float hgt = (float) (e.height() > 0 ? e.height() : 1.8);
-                // Translate to the hitbox corner (feet, back-left), then scale the
-                // unit cube to w × h × w so the outline matches the real hitbox.
+                double w = e.width() > 0 ? e.width() : 0.6;
+                double h = e.height() > 0 ? e.height() : 1.8;
+                Object shape = entityShape(w, h);
+                if (shape == null) continue;
+                // Translate to the hitbox corner (feet, centered horizontally).
                 mPush.invoke(pose);
                 mTranslate.invoke(pose, e.x() - w / 2.0 - camX, e.y() - camY, e.z() - w / 2.0 - camZ);
-                mScale.invoke(pose, w, hgt, w);
-                mSubmitShapeOutline.invoke(collector, pose, blockShape, linesRenderType, e.color(), 2.5f, false);
+                mSubmitShapeOutline.invoke(collector, pose, shape, linesRenderType, e.color(), 2.5f, false);
                 mPop.invoke(pose);
                 count++;
             }
             return count;
         } catch (Throwable t) {
+            if (lastRenderLog == 0) System.err.println("[barry] renderEntities error: " + t);
             return 0;
+        }
+    }
+
+    // Cached VoxelShape sized w × h × w (quantized to 0.05 to bound the cache).
+    private static Object entityShape(double w, double h) {
+        try {
+            int key = (((int) Math.round(w * 20)) << 16) | ((int) Math.round(h * 20) & 0xFFFF);
+            Object s = entityShapeCache.get(key);
+            if (s != null) return s;
+            if (mShapesBox == null) {
+                ClassLoader cl = RenderHook.minecraftInstance().getClass().getClassLoader();
+                Class<?> shapes = cl.loadClass("net.minecraft.world.phys.shapes.Shapes");
+                mShapesBox = shapes.getMethod("box", double.class, double.class, double.class,
+                        double.class, double.class, double.class);
+            }
+            s = mShapesBox.invoke(null, 0.0, 0.0, 0.0, w, h, w);
+            entityShapeCache.put(key, s);
+            return s;
+        } catch (Throwable t) {
+            return null;
         }
     }
 
@@ -157,7 +183,6 @@ public final class WorldRenderHook {
             mPush = poseClass.getMethod("pushPose");
             mPop = poseClass.getMethod("popPose");
             mTranslate = poseClass.getMethod("translate", double.class, double.class, double.class);
-            mScale = poseClass.getMethod("scale", float.class, float.class, float.class);
 
             // submitShapeOutline(PoseStack, VoxelShape, RenderType, int, float, boolean)
             for (Method m : collector.getClass().getMethods()) {

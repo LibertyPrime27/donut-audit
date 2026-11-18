@@ -268,14 +268,17 @@ public final class RenderHook {
         for (int i = 0; i < items.length; i++) {
             boolean selected = (i == sel);
             if (selected) fillRect(graphics, x - 4, y - 1, x + w - 2, y + rowH - 2, 0x40FFFFFF);
+            int enBlocks = barry.core.OreType.enabledCount();
+            int enEnts = barry.esp.EntityTypes.enabledCount();
             String label = items[i];
-            if (i == 1) label = label + ": " + (barry.ui.Fullbright.isOn() ? "ON" : "OFF");
-            if (i == 2) label = label + ": " + (barry.esp.EntityTypes.isEnabled("player") ? "ON" : "OFF");
-            if (i == 3) label = label + " (" + barry.esp.EntityTypes.enabledCount() + ")";
+            boolean on = false;
+            if (i == 0) { on = enBlocks > 0; label = label + " (" + enBlocks + "): " + (on ? "ON" : "OFF"); }
+            if (i == 1) { on = barry.ui.Fullbright.isOn(); label = label + ": " + (on ? "ON" : "OFF"); }
+            if (i == 2) { on = barry.esp.EntityTypes.isEnabled("player"); label = label + ": " + (on ? "ON" : "OFF"); }
+            if (i == 3) { on = enEnts > 0; label = label + " (" + enEnts + "): " + (on ? "ON" : "OFF"); }
             String prefix = selected ? "> " : "  ";
             int col = selected ? 0xFFFFFFFF : 0xFFCCCCCC;
-            if (i == 1 && barry.ui.Fullbright.isOn() && !selected) col = 0xFF66FF66;
-            if (i == 2 && barry.esp.EntityTypes.isEnabled("player") && !selected) col = 0xFFFF6666;
+            if (on && !selected) col = (i == 2 || i == 3) ? 0xFFFF6666 : 0xFF66FF66;
             drawStr(graphics, prefix + label, x, y, col);
             y += rowH;
         }
@@ -418,6 +421,15 @@ public final class RenderHook {
 
             java.util.List<String> out = new java.util.ArrayList<>();
             out.add("[barry] " + dim + " | ores:" + ores + " | BACKTICK=toggle DELETE=panic");
+
+            // Active-scan status line: "scanning for ores + mobs" / "idle".
+            int enBlocks = barry.core.OreType.enabledCount();
+            int enEnts = barry.esp.EntityTypes.enabledCount();
+            java.util.List<String> active = new java.util.ArrayList<>();
+            if (enBlocks > 0) active.add("ores(" + enBlocks + ")");
+            if (enEnts > 0) active.add("mobs(" + enEnts + ")");
+            out.add(active.isEmpty() ? "scanning: idle (enable in F6 menu)"
+                                     : "scanning for " + String.join(" + ", active));
             int shown = 0;
             for (var e : near) {
                 if (shown >= 6) break;
