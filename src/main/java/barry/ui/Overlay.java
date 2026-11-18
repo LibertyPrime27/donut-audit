@@ -56,6 +56,7 @@ public final class Overlay {
     public static void shutdown() {
         INITIALIZED.set(false);
         VISIBLE.set(false);
+        barry.esp.PlayerTracker.reset();
         if (tickThread != null) {
             tickThread.interrupt();
             tickThread = null;
@@ -77,6 +78,7 @@ public final class Overlay {
         VISIBLE.set(false);
         Menu.close();
         Fullbright.set(false); // revert to the vanilla look on panic
+        barry.esp.PlayerTracker.setEnabled(false);
     }
 
     private static void tickLoop() {
@@ -201,6 +203,11 @@ public final class Overlay {
             // Keep fullbright asserted while enabled.
             Fullbright.apply();
         } catch (Throwable ignored) {}
+
+        // Player ESP scan (runs at its own 10 Hz internal rate).
+        if (VISIBLE.get()) {
+            barry.esp.PlayerTracker.scan();
+        }
 
         // If visible, schedule render work on the game thread
         if (VISIBLE.get()) {

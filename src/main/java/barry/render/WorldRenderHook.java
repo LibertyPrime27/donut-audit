@@ -22,6 +22,7 @@ public final class WorldRenderHook {
 
     // Cached handles
     private static Object blockShape;        // Shapes.block() -> VoxelShape
+    private static Object playerShape;       // Shapes.box(0,0,0,1,2,1) -> player-sized VoxelShape
     private static volatile Object linesRenderType;   // RenderType for line outlines
     private static volatile Object capturedLineType;  // grabbed from submitHitOutline
     private static Method mSubmitShapeOutline;
@@ -85,12 +86,19 @@ public final class WorldRenderHook {
                 mPop.invoke(pose);
                 submitted++;
             }
+            // --- Player ESP outlines ---
+            int playerCount = 0;
+            if (barry.esp.PlayerTracker.isEnabled()) {
+                playerCount = renderPlayers(pose, collector, camX, camY, camZ);
+            }
+
             long now = System.currentTimeMillis();
             if (now - lastRenderLog > 2000) {
                 lastRenderLog = now;
                 System.err.println("[barry] render: inRange=" + total + " submitted=" + submitted
                         + " debrisInRange=" + debrisInRange
                         + " debrisEnabled=" + OreType.ANCIENT_DEBRIS.isEnabled()
+                        + " players=" + playerCount
                         + " map=" + eng.currentDimension());
             }
         } catch (Throwable t) {
@@ -99,6 +107,46 @@ public final class WorldRenderHook {
                 System.err.println("[barry] world outline error: " + t);
                 resolveFailed = true;
             }
+        }
+    }
+
+    // Draw see-through outlines for tracked players. Returns the number rendered.
+    private static int renderPlayers(Object pose, Object collector,
+                                     double camX, double camY, double camZ) {
+        try {
+            if (playerShape == null) resolvePlayerShape();
+            if (playerShape == null || linesRenderType == null) return 0;
+
+            var players = barry.esp.PlayerTracker.tracked();
+            int count = 0;
+            for (var p : players) {
+                if (p.distance() > 256) continue;
+                // Translate so the 1×2×1 box is centered horizontally on the player
+                // and starts at their feet vertically.
+                mPush.invoke(pose);
+                mTranslate.invoke(pose, p.x() - 0.5 - camX, p.y() - camY, p.z() - 0.5 - camZ);
+                mSubmitShapeOutline.invoke(collector, pose, playerShape, linesRenderType, p.color(), 2.5f, false);
+                mPop.invoke(pose);
+                count++;
+            }
+            return count;
+        } catch (Throwable t) {
+            return 0;
+        }
+    }
+
+    private static void resolvePlayerShape() {
+        try {
+            ClassLoader cl = RenderHook.minecraftInstance().getClass().getClassLoader();
+            Class<?> shapes = cl.loadClass("net.minecraft.world.phys.shapes.Shapes");
+            java.lang.reflect.Method boxMethod = shapes.getMethod("box",
+                    double.class, double.class, double.class,
+                    double.class, double.class, double.class);
+            // 1 wide × 2 tall × 1 deep — close enough to the player hitbox (0.6 × 1.8 × 0.6).
+            playerShape = boxMethod.invoke(null, 0.0, 0.0, 0.0, 1.0, 2.0, 1.0);
+            System.err.println("[barry] player ESP shape resolved");
+        } catch (Throwable t) {
+            System.err.println("[barry] player shape resolve failed: " + t);
         }
     }
 

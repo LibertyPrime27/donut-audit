@@ -217,6 +217,25 @@ public final class RenderHook {
                 y += 10;
             }
 
+            // Player ESP HUD section
+            if (barry.esp.PlayerTracker.isEnabled()) {
+                var players = barry.esp.PlayerTracker.tracked();
+                if (!players.isEmpty()) {
+                    y += 2;
+                    drawStr(graphics, "PLAYERS (" + players.size() + ")", 4, y, 0xFFFF6666);
+                    y += 10;
+                    int shown = 0;
+                    for (var p : players) {
+                        if (shown >= 8) break;
+                        String line = String.format("  %-16s %dm  %.0f HP",
+                                p.name(), (int) p.distance(), p.health());
+                        drawStr(graphics, line, 4, y, p.color());
+                        y += 10;
+                        shown++;
+                    }
+                }
+            }
+
             // Menu panels (one screen at a time).
             if (Overlay.isVisible()) {
                 switch (barry.ui.Menu.screen()) {
@@ -246,9 +265,11 @@ public final class RenderHook {
             if (selected) fillRect(graphics, x - 4, y - 1, x + w - 2, y + rowH - 2, 0x40FFFFFF);
             String label = items[i];
             if (i == 1) label = label + ": " + (barry.ui.Fullbright.isOn() ? "ON" : "OFF");
+            if (i == 2) label = label + ": " + (barry.esp.PlayerTracker.isEnabled() ? "ON" : "OFF");
             String prefix = selected ? "> " : "  ";
             int col = selected ? 0xFFFFFFFF : 0xFFCCCCCC;
             if (i == 1 && barry.ui.Fullbright.isOn() && !selected) col = 0xFF66FF66;
+            if (i == 2 && barry.esp.PlayerTracker.isEnabled() && !selected) col = 0xFFFF6666;
             drawStr(graphics, prefix + label, x, y, col);
             y += rowH;
         }

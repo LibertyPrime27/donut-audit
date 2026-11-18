@@ -7,7 +7,7 @@ public final class Menu {
 
     public enum Screen { NONE, MAIN, BLOCKS, KEYS }
 
-    public static final String[] MAIN_ITEMS = { "Block Selector", "Fullbright", "Keybinds" };
+    public static final String[] MAIN_ITEMS = { "Block Selector", "Fullbright", "Player ESP", "Keybinds" };
 
     private static volatile Screen screen = Screen.NONE;
     private static volatile int mainSel;
@@ -42,7 +42,8 @@ public final class Menu {
         switch (mainSel) {
             case 0: FilterMenu.reset(); screen = Screen.BLOCKS; break;
             case 1: Fullbright.toggle(); break;
-            case 2: screen = Screen.KEYS; break;
+            case 2: barry.esp.PlayerTracker.toggle(); break;
+            case 3: screen = Screen.KEYS; break;
             default: break;
         }
     }
