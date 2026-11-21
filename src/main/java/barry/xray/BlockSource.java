@@ -256,6 +256,20 @@ public final class BlockSource {
     private volatile boolean dimLogged;
     private volatile Method mDimLoc; // discovered Identifier accessor on the ResourceKey
 
+    // Cached ClientLevel reference — stable once resolved, avoids repeated findLevel() reflection.
+    private volatile Object cachedLevel;
+
+    /** Refresh the cached ClientLevel reference from Minecraft instance. */
+    private void refreshCachedLevel() {
+        try {
+            Object mc = barry.render.RenderHook.minecraftInstance();
+            if (mc != null) {
+                Object level = fieldByTypeName(mc, "ClientLevel");
+                if (level != null) cachedLevel = level;
+            }
+        } catch (Throwable ignored) {}
+    }
+
     private Dimension readDimension(Object level) {
         try {
             if (mDimension == null) return null;
@@ -297,7 +311,12 @@ public final class BlockSource {
     public Dimension liveDimension() {
         try {
             if (mDimension != null) {
-                Object level = findLevel();
+                // Use cached ClientLevel; refresh once per second to catch reconnects.
+                Object level = cachedLevel;
+                if (level == null) {
+                    refreshCachedLevel();
+                    level = cachedLevel;
+                }
                 if (level != null) {
                     Object key = mDimension.invoke(level);
                     if (key != null) {
@@ -331,17 +350,6 @@ public final class BlockSource {
             if (cd != Dimension.UNKNOWN && cd != Dimension.OVERWORLD) return cd;
         }
         return Dimension.UNKNOWN;
-    }
-
-    private Object findLevel() {
-        if (engine == null) return null;
-        try {
-            Object mc = barry.render.RenderHook.minecraftInstance();
-            if (mc != null) {
-                return fieldByTypeName(mc, "ClientLevel");
-            }
-        } catch (Throwable ignored) {}
-        return null;
     }
 
     private static Object fieldByTypeName(Object obj, String typeContains) {

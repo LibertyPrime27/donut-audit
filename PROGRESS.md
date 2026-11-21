@@ -58,8 +58,19 @@ Four improvements to the Netherite Auto Mode system, built and copied to `C:\Use
 3. **Centered countdown display** — large on-screen message ("NETHER AUTO — RTP in 3s...") appears during RTP phase, counts down 3→2→1, fades out when SCANNING begins. Drawn via existing drawStr/fillRect infrastructure.
 4. **Panic/Cancel keys** — new `CANCEL` action in KeybindRegistry (default: C / GLFW 46), rebindable in KEYS menu. CANCEL stops Nether Auto and keeps overlay visible. PANIC (DELETE) hides everything AND stops auto when active. Both are customizable.
 
-- Modified: `BlockSource.java` (liveDimension()), `NetheriteAutoMode.java` (dim check + /rtp nether + countdown), `KeybindRegistry.java` (CANCEL action), `Overlay.java` (CANCEL routing + dual-purpose panic), `RenderHook.java` (drawCountdownMessage)
+- Modified: `BlockSource.java` (liveDimension(), cached level), `NetheriteAutoMode.java` (dim check + /rtp nether + countdown + toggleEnabled starts auto), `KeybindRegistry.java` (CANCEL action), `Overlay.java` (CANCEL routing + dual-purpose panic), `RenderHook.java` (drawCountdownMessage)
 - Rebuilt jar: `build/libs/barry-0.1.0.jar` → copied to test version folder
+
+## Nether Auto Bug Fixes (2026-11-20)
+
+Two issues found and fixed after initial build:
+
+**Issue 1 — Lag severely increased:** `BlockSource.liveDimension()` did a full reflection chain on every call (~20 Hz): `findLevel() → RenderHook.minecraftInstance() class load + mDimension.invoke + mDimLoc.invoke + toString`. Fixed by caching the ClientLevel reference (`cachedLevel`) in BlockSource — stable once resolved, avoids repeated findLevel() reflection.
+
+**Issue 2 — Not starting when enabled:** Log showed zero `[barry] NetherAuto:` messages. `toggleEnabled()` just flipped `enabled = true` but never called `start()`, so state stayed IDLE with no RTP or countdown. Fixed by making `toggleEnabled()` call `start(engine)` when enabling (going false→true), which triggers the full start sequence: reset state, send `/rtp nether`, show countdown, transition to SCANNING.
+
+- Modified: `BlockSource.java` (added cachedLevel + refreshCachedLevel()), `NetheriteAutoMode.java` (toggleEnabled now calls start())
+- Rebuilt jar copied to test version folder
 
 ## Notes
 - Local LLM via LM Studio (huihui-qwen3.6-35b-a3b-abliterated) is used with Claude Code.

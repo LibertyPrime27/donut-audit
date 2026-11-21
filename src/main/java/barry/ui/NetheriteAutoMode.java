@@ -55,7 +55,17 @@ public final class NetheriteAutoMode {
 
     public static boolean isEnabled() { return enabled; }
     public static void setEnabled(boolean v) { enabled = v; }
-    public static void toggleEnabled() { enabled = !enabled; }
+    public static void toggleEnabled() {
+        if (!enabled) {
+            // Enabling — actually start auto mode (RTP + scan), not just flip the flag.
+            enabled = true;
+            barry.xray.XrayEngine eng = barry.render.RenderHook.engine();
+            start(eng);
+        } else {
+            // Disabling — stop and reset.
+            stop();
+        }
+    }
 
     public static boolean isAutoRtp() { return autoRtp; }
     public static void setAutoRtp(boolean v) { autoRtp = v; }
