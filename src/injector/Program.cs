@@ -7,7 +7,8 @@ Directory.CreateDirectory(tmpDir);
 
 try
 {
-    var jarPath = ExtractResource("agent.jar", tmpDir);
+    // Prefer standalone agent.jar next to the exe if present; fall back to embedded.
+    var jarPath = FindJar(tmpDir);
     var jattachPath = ExtractResource("jattach.exe", tmpDir);
 
     if (args.Length == 0)
@@ -128,6 +129,20 @@ static void PrintUsage()
     Console.Error.WriteLine("  audit-tool list            List Minecraft JVMs");
     Console.Error.WriteLine("  audit-tool attach <pid>    Attach agent to PID");
     Console.Error.WriteLine("  audit-tool eject  <pid>    Eject agent from PID");
+}
+
+static string FindJar(string tmpDir)
+{
+    // Look for a standalone agent.jar next to the executing assembly.
+    var exeDir = AppContext.BaseDirectory;
+    var standalone = Path.Combine(exeDir, "agent.jar");
+    if (File.Exists(standalone))
+    {
+        Console.Error.WriteLine("[barry] Using standalone agent.jar: " + standalone);
+        return standalone;
+    }
+    // Fall back to embedded resource.
+    return ExtractResource("agent.jar", tmpDir);
 }
 
 static string ExtractResource(string name, string dir)
