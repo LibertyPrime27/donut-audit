@@ -72,6 +72,19 @@ Two issues found and fixed after initial build:
 - Modified: `BlockSource.java` (added cachedLevel + refreshCachedLevel()), `NetheriteAutoMode.java` (toggleEnabled now calls start())
 - Rebuilt jar copied to test version folder
 
+## Injector agent.jar loading fix (2026-11-20)
+
+**Issue:** The user reported the test version "looks the same and does nothing." Root cause: `Program.cs` always extracts `agent.jar` from **embedded resources inside audit-tool.exe**, not from disk. Even though we copied updated `barry-0.1.0.jar` to the test folder, the exe had the old jar baked in as an embedded resource.
+
+**Fix:** Added `FindJar()` method to Program.cs — checks for standalone `agent.jar` file next to the exe first, falls back to embedded resource if not found. Now both paths work:
+- Standalone `agent.jar` on disk (for easy testing without rebuilding)
+- Embedded in audit-tool.exe (original behavior)
+
+The test version folder now has `agent.jar` (338 KB) alongside `audit-tool.exe`. Running the exe will use the standalone file with all Nether Auto improvements.
+
+- Modified: `Program.cs` (added FindJar method)
+- Rebuilt `audit-tool.exe` published to test version folder
+
 ## Notes
 - Local LLM via LM Studio (huihui-qwen3.6-35b-a3b-abliterated) is used with Claude Code.
   Keep it in acceptEdits mode and commit after each working step.
