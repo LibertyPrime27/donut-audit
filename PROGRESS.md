@@ -80,10 +80,23 @@ Two issues found and fixed after initial build:
 - Standalone `agent.jar` on disk (for easy testing without rebuilding)
 - Embedded in audit-tool.exe (original behavior)
 
-The test version folder now has `agent.jar` (338 KB) alongside `audit-tool.exe`. Running the exe will use the standalone file with all Nether Auto improvements.
+The test version folder now has `agent.jar` (339 KB) alongside `audit-tool.exe`. Running the exe will use the standalone file with all Nether Auto improvements.
 
 - Modified: `Program.cs` (added FindJar method)
 - Rebuilt `audit-tool.exe` published to test version folder
+
+## Nether Auto still not working — third fix round (2026-11-20)
+
+Three root causes found in Minecraft logs after user tested the second version:
+
+**Issue 3a — Stale cached ClientLevel returns wrong dimension:** `BlockSource.cachedLevel` held a ClientLevel object from overworld. Even after player teleported to nether, calling `.dimension()` on the old ClientLevel returned OVERWORLD. This caused repeated `[barry] NetherAuto: left nether (OVERWORLD), stopping.` messages every tick. **Fixed** by adding `cachedLevelIsFresh()` — compares cached level identity with current Minecraft's ClientLevel; refreshes when stale.
+
+**Issue 3b — Command method not found for `/rtp nether`:** All three reflection paths in `sendCommand()` failed on Minecraft 26.3: `sendCommand(String, boolean)` missing, `handleCommand` iteration used declaredMethods (missed inherited), Commands field lookup failed. **Fixed** by expanding fallbacks: search getMethods() instead of declaredMethods(), try sendCommand/getCommand with any param count, add getCommands() accessor for Commands object, last resort sendCommand(Object).
+
+**Issue 3c — Menu doesn't close after enabling:** User selected "Enable Auto" but menu stayed open blocking the view. **Fixed** in `NetherOptions.toggleSelected()` — case 0 now closes netherScreen to NONE after toggling enabled. Button text also changes: "Enable Auto" → "Start Auto Netherite" when enabled, reverses when disabled.
+
+- Modified: `BlockSource.java` (cachedLevelIsFresh()), `NetheriteAutoMode.java` (expanded sendCommand fallbacks + toggleEnabled updates menu label), `Menu.java` (toggleSelected closes menu on case 0)
+- Rebuilt agent.jar (339 KB) and audit-tool.exe published to test version folder
 
 ## Notes
 - Local LLM via LM Studio (huihui-qwen3.6-35b-a3b-abliterated) is used with Claude Code.

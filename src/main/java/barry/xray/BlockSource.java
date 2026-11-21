@@ -270,6 +270,18 @@ public final class BlockSource {
         } catch (Throwable ignored) {}
     }
 
+    /** Check whether the cached ClientLevel is still the current one. */
+    private boolean cachedLevelIsFresh() {
+        try {
+            Object mc = barry.render.RenderHook.minecraftInstance();
+            if (mc == null) return false;
+            Object current = fieldByTypeName(mc, "ClientLevel");
+            return current != null && current == cachedLevel;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
     private Dimension readDimension(Object level) {
         try {
             if (mDimension == null) return null;
@@ -311,9 +323,9 @@ public final class BlockSource {
     public Dimension liveDimension() {
         try {
             if (mDimension != null) {
-                // Use cached ClientLevel; refresh once per second to catch reconnects.
+                // Validate cached ClientLevel is still current; refresh if stale.
                 Object level = cachedLevel;
-                if (level == null) {
+                if (level == null || !cachedLevelIsFresh()) {
                     refreshCachedLevel();
                     level = cachedLevel;
                 }

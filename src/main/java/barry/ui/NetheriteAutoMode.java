@@ -61,9 +61,17 @@ public final class NetheriteAutoMode {
             enabled = true;
             barry.xray.XrayEngine eng = barry.render.RenderHook.engine();
             start(eng);
+            // Update menu label so button text changes.
+            if (barry.ui.Menu.NetherOptions.ITEMS.length > 0) {
+                barry.ui.Menu.NetherOptions.ITEMS[0] = "Start Auto Netherite";
+            }
         } else {
             // Disabling — stop and reset.
             stop();
+            // Restore menu label.
+            if (barry.ui.Menu.NetherOptions.ITEMS.length > 0) {
+                barry.ui.Menu.NetherOptions.ITEMS[0] = "Enable Auto";
+            }
         }
     }
 
@@ -333,24 +341,44 @@ public final class NetheriteAutoMode {
                 return;
             } catch (NoSuchMethodException ignored) {}
 
-            // Fallback: Minecraft.getCommands().processCommand(String)
-            for (java.lang.reflect.Method m : mcClass.getDeclaredMethods()) {
-                if (m.getName().equals("handleCommand") && m.getParameterCount() == 1 && m.getParameterTypes()[0] == String.class) {
+            // Fallback: any sendCommand/getCommand method accepting a String
+            for (java.lang.reflect.Method m : mcClass.getMethods()) {
+                if ((m.getName().equals("sendCommand") || m.getName().equals("getCommand"))
+                        && m.getParameterCount() >= 1
+                        && m.getParameterTypes()[0] == String.class) {
                     m.setAccessible(true);
                     m.invoke(mc, cmd);
                     return;
                 }
             }
 
-            // Another fallback: look for a "commands" field with a processCommand method
-            Object commands = barry.render.RenderHook.findFieldByType(mc, "Commands");
-            if (commands != null) {
-                for (java.lang.reflect.Method m : commands.getClass().getMethods()) {
-                    if (m.getName().equals("processCommand") && m.getParameterCount() == 1 && m.getParameterTypes()[0] == String.class) {
-                        m.setAccessible(true);
-                        m.invoke(commands, cmd);
-                        return;
+            // Fallback: Minecraft.getCommands().processCommand(String) or handleCommand(String)
+            try {
+                Object commands = barry.render.RenderHook.findFieldByType(mc, "Commands");
+                if (commands == null) {
+                    Class<?> cmdsClass = cl.loadClass(barry.attach.Remap.resolveClass("net.minecraft.commands.Commands"));
+                    Method getCmds = mcClass.getMethod("getCommands");
+                    commands = getCmds.invoke(mc);
+                }
+                if (commands != null) {
+                    for (java.lang.reflect.Method m : commands.getClass().getMethods()) {
+                        if ((m.getName().equals("processCommand") || m.getName().equals("handleCommand"))
+                                && m.getParameterCount() == 1
+                                && m.getParameterTypes()[0] == String.class) {
+                            m.setAccessible(true);
+                            m.invoke(commands, cmd);
+                            return;
+                        }
                     }
+                }
+            } catch (Throwable ignored) {}
+
+            // Last resort: try Minecraft.sendCommand(Object) — accepts any arg
+            for (java.lang.reflect.Method m : mcClass.getMethods()) {
+                if (m.getName().equals("sendCommand") && m.getParameterCount() == 1) {
+                    m.setAccessible(true);
+                    m.invoke(mc, cmd);
+                    return;
                 }
             }
 
