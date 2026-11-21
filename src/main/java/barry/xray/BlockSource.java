@@ -316,9 +316,10 @@ public final class BlockSource {
     }
 
     /**
-     * Live dimension detection — performs a fresh reflection read of
-     * ClientLevel.dimension() → ResourceKey → Identifier at call time.
-     * Falls back to the engine's cached dimension if level handles aren't ready.
+     * Live dimension detection — always tries all Identifier-returning methods
+     * on the ResourceKey (no blind cache trust). On MC 26.3 the first discovered
+     * accessor (registry()) returns "minecraft:dimension" which doesn't match our IDs,
+     * so we must try every method each time.
      */
     public Dimension liveDimension() {
         try {
@@ -330,15 +331,7 @@ public final class BlockSource {
                     if (level != null) {
                         Object key = mDimension.invoke(level);
                         if (key != null) {
-                            // Try cached accessor first.
-                            if (mDimLoc != null) {
-                                Object loc = mDimLoc.invoke(key);
-                                if (loc != null) {
-                                    Dimension d = Dimension.fromId(loc.toString());
-                                    if (d != Dimension.UNKNOWN) return d;
-                                }
-                            }
-                            // Discovery: try ALL Identifier-returning methods on the ResourceKey.
+                            // Try ALL Identifier-returning methods — don't trust cache blindly.
                             for (java.lang.reflect.Method m : key.getClass().getMethods()) {
                                 if (m.getParameterCount() != 0) continue;
                                 String rn = m.getReturnType().getSimpleName();
@@ -346,12 +339,10 @@ public final class BlockSource {
                                 try {
                                     Object loc = m.invoke(key);
                                     if (loc == null) continue;
-                                    String idStr = loc.toString();
-                                    Dimension d = Dimension.fromId(idStr);
+                                    Dimension d = Dimension.fromId(loc.toString());
                                     if (d != Dimension.UNKNOWN) {
-                                        // Cache this successful accessor.
+                                        // Cache this successful accessor for future calls.
                                         mDimLoc = m;
-                                        dimLogged = true;
                                         return d;
                                     }
                                 } catch (Throwable ignore) {}

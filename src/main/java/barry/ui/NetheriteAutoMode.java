@@ -346,9 +346,28 @@ public final class NetheriteAutoMode {
                 }
             }
 
-            // Fallback 2: Minecraft.chat.addMessage(String/Component) — MC 26.x chat path
+            // Fallback 2: Minecraft.chat.addMessage(String/Component) — MC 26.x chat path.
+            // Try multiple field name variants since the field may be "chat", "Gui", etc.
             try {
-                Object chat = barry.render.RenderHook.findFieldByType(mc, "Chat");
+                Object chat = null;
+                for (java.lang.reflect.Field f : mc.getClass().getDeclaredFields()) {
+                    String fn = f.getName();
+                    if (fn.equalsIgnoreCase("chat") || fn.contains("Chat") || fn.contains("Gui")) {
+                        f.setAccessible(true);
+                        Object candidate = f.get(mc);
+                        if (candidate != null) {
+                            // Verify it has addMessage or sendMessage
+                            for (java.lang.reflect.Method m : candidate.getClass().getMethods()) {
+                                if ((m.getName().equals("addMessage") || m.getName().equals("sendMessage"))
+                                        && m.getParameterCount() == 1) {
+                                    chat = candidate;
+                                    break;
+                                }
+                            }
+                        }
+                        if (chat != null) break;
+                    }
+                }
                 if (chat != null) {
                     for (java.lang.reflect.Method m : chat.getClass().getMethods()) {
                         if ((m.getName().equals("addMessage") || m.getName().equals("sendMessage"))
@@ -364,7 +383,9 @@ public final class NetheriteAutoMode {
                         }
                     }
                 }
-            } catch (Throwable ignored) {}
+            } catch (Throwable t) {
+                System.err.println("[barry] NetherAuto: Chat path error: " + t.getMessage());
+            }
 
             // Fallback 3: Minecraft.getCommands().processCommand(String) or handleCommand(String)
             try {

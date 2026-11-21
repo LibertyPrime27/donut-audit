@@ -111,6 +111,20 @@ Two remaining issues found after testing the third version:
 - Modified: `BlockSource.java` (liveDimension always fetches current ClientLevel + tries all Identifier methods), `NetheriteAutoMode.java` (Chat-field sendCommand path + per-path logging), `Menu.java` (ITEMS[0] = "Start Auto Netherite")
 - Rebuilt agent.jar (340 KB) and audit-tool.exe published to test version folder
 
+## Nether Auto fifth fix — dimension cache trust + command robustness + correct jar tested (2026-11-20)
+
+Two definitive fixes after identifying root causes in logs:
+
+**Issue 5a — Dimension accessor cached too early:** Log showed `registry() = minecraft:dimension -> UNKNOWN` discovered FIRST, then `identifier() = minecraft:overworld -> OVERWORLD`. The first-discovered `registry()` was cached as `mDimLoc`, and subsequent calls trusted it blindly even though it returned the wrong value. **Fixed** by removing blind cache trust in `liveDimension()` — always iterates ALL Identifier-returning methods on each call, caches whichever one succeeds.
+
+**Issue 5b — Chat field lookup too narrow:** `findFieldByType(mc, "Chat")` missed the Chat field on MC 26.3 (field name variant). **Fixed** by iterating all declared fields looking for names containing "chat", "Chat", or "Gui", then verifying the candidate has addMessage/sendMessage methods.
+
+**Issue 5c — Testing wrong jar:** Previous tests used a stale `agent.jar` (18:45, 339 KB) while source files were updated to 19:50. **Fixed** by copying freshly built jar (19:53, 340 KB) to test version folder. Verified identical sizes between build output and test folder.
+
+- Modified: `BlockSource.java` (liveDimension tries all methods each call), `NetheriteAutoMode.java` (Chat field search iterates declaredFields with name variants)
+- **agent.jar in test version: 340189 bytes (19:53) — CORRECT VERSION**
+- audit-tool.exe rebuilt and copied to test version folder
+
 ## Notes
 - Local LLM via LM Studio (huihui-qwen3.6-35b-a3b-abliterated) is used with Claude Code.
   Keep it in acceptEdits mode and commit after each working step.
