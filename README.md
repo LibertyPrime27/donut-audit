@@ -1,4 +1,4 @@
-# barry — DonutSMP Red-Team Audit Tool
+# barry — personal server test tool
 
 Internal anti-cheat testing tool. **Authorized use only** on whitelisted
 accounts against DonutSMP infrastructure.

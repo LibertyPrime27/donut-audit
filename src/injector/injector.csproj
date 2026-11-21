@@ -7,9 +7,21 @@
     <Nullable>enable</Nullable>
     <AssemblyName>audit-tool</AssemblyName>
     <PublishSingleFile>true</PublishSingleFile>
-    <SelfContained>false</SelfContained>
+    <SelfContained>true</SelfContained>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <ValidateExecutableReferencesMatchSelfContained>false</ValidateExecutableReferencesMatchSelfContained>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <!-- Keep everything under jlink-jre out of this project's file lists -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);jlink-jre\**</DefaultItemExcludes>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Exclude all jlink-jre source files to avoid duplicate assembly attributes -->
+    <Compile Remove="jlink-jre\**" />
+
+    <!-- Build jlink-jre first, but do not link its assembly into this project -->
+    <ProjectReference Include="jlink-jre\jlink-jre.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
 
   <ItemGroup>
     <EmbeddedResource Include="..\..\build\libs\barry-0.1.0.jar">
@@ -19,5 +31,18 @@
       <LogicalName>jattach.exe</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
+
+  <!-- After publish: copy the JRE into a jre folder next to the exe -->
+  <Target Name="CopyJlinkJreToPublish" AfterTargets="Publish">
+    <PropertyGroup>
+      <_JreSource>$(MSBuildProjectDirectory)\jlink-jre\bin\$(Configuration)\net7.0\win-x64\jlink-jre\</_JreSource>
+    </PropertyGroup>
+    <ItemGroup>
+      <_JreFiles Include="$(_JreSource)**\*" />
+    </ItemGroup>
+    <Error Condition="'@(_JreFiles)' == ''" Text="No JRE files found at $(_JreSource). Build jlink-jre first." />
+    <Copy SourceFiles="@(_JreFiles)" DestinationFolder="$(PublishDir)jre\%(_JreFiles.RecursiveDir)" SkipUnchangedFiles="true" />
+    <Message Importance="High" Text="JRE copied to: $(PublishDir)jre\" />
+  </Target>
 
 </Project>

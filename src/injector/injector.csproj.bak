@@ -1,0 +1,55 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net7.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>audit-tool</AssemblyName>
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>false</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+  </PropertyGroup>
+
+  <!-- Reference jlink-jre project so it builds first -->
+  <ItemGroup>
+    <!-- Exclude all jlink-jre source files to avoid duplicate assembly attributes -->
+    <Compile Remove="jlink-jre\**" />
+
+    <!-- Reference jlink-jre project so it builds first -->
+    <ProjectReference Include="jlink-jre\jlink-jre.csproj" GenerateTargetFramework="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\build\libs\barry-0.1.0.jar">
+      <LogicalName>agent.jar</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\..\vendor\jattach\jattach.exe">
+      <LogicalName>jattach.exe</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+  <!-- Post-build: copy JRE into publish directory -->
+  <Target Name="CopyJlinkJreToPublish" AfterTargets="Build" DependsOnTargets="Build">
+    <PropertyGroup>
+      <_JreSource>jlink-jre\bin\Release\net7.0\win-x64\jlink-jre\</_JreSource>
+      <_JreDest>$(PublishDir)..\jre\</_JreDest>
+    </PropertyGroup>
+
+    <!-- Create destination directory -->
+    <MakeDir Directories="$(_JreDest)" />
+
+    <!-- Copy JRE files to publish directory -->
+    <Copy SourceFiles="%(Identity)" DestinationFolder="$(PublishDir)\jre\%(RecursiveDir)%(Filename)%(Extension)" SkipUnchangedFiles="true">
+      <Output TaskParameter="DestinationFiles" ItemName="_JreDestFiles" />
+      <Output TaskParameter="SourceFiles" ItemName="JreFiles" />
+    </Copy>
+
+    <!-- Use CopyTask to copy all JRE files -->
+    <Exec Command='robocopy /E /MOVE /PURGE "$(ProjectDir)%(Identity)\jlink-jre\bin\Release\net7.0\win-x64\jlink-jre\" "%(_JreDest)"\'
+          ContinueOnError="WarnAndContinue" />
+
+    <Message Importance="High" Text="✓ JRE copied to: $(PublishDir)\jre\" />
+  </Target>
+
+</Project>

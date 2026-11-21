@@ -1,0 +1,7 @@
+Manifest-Version: 1.0
+Agent-Class: barry.Bootstrap
+Premain-Class: barry.Bootstrap
+Can-Retransform-Classes: true
+Can-Redefine-Classes: true
+Main-Class: barry.launch.Main
+
