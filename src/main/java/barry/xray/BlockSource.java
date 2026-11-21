@@ -323,34 +323,39 @@ public final class BlockSource {
     public Dimension liveDimension() {
         try {
             if (mDimension != null) {
-                // Validate cached ClientLevel is still current; refresh if stale.
-                Object level = cachedLevel;
-                if (level == null || !cachedLevelIsFresh()) {
-                    refreshCachedLevel();
-                    level = cachedLevel;
-                }
-                if (level != null) {
-                    Object key = mDimension.invoke(level);
-                    if (key != null) {
-                        // Use cached accessor first.
-                        if (mDimLoc != null) {
-                            Object loc = mDimLoc.invoke(key);
-                            if (loc != null) {
-                                Dimension d = Dimension.fromId(loc.toString());
-                                if (d != Dimension.UNKNOWN) return d;
+                // Always get current ClientLevel from Minecraft (avoid stale instance).
+                Object mc = barry.render.RenderHook.minecraftInstance();
+                if (mc != null) {
+                    Object level = fieldByTypeName(mc, "ClientLevel");
+                    if (level != null) {
+                        Object key = mDimension.invoke(level);
+                        if (key != null) {
+                            // Try cached accessor first.
+                            if (mDimLoc != null) {
+                                Object loc = mDimLoc.invoke(key);
+                                if (loc != null) {
+                                    Dimension d = Dimension.fromId(loc.toString());
+                                    if (d != Dimension.UNKNOWN) return d;
+                                }
                             }
-                        }
-                        // One-shot discovery: find an Identifier-returning accessor.
-                        for (java.lang.reflect.Method m : key.getClass().getMethods()) {
-                            if (m.getParameterCount() != 0) continue;
-                            String rn = m.getReturnType().getSimpleName();
-                            if (!rn.equals("Identifier") && !rn.equals("ResourceLocation")) continue;
-                            try {
-                                Object loc = m.invoke(key);
-                                if (loc == null) continue;
-                                Dimension d = Dimension.fromId(loc.toString());
-                                if (d != Dimension.UNKNOWN) return d;
-                            } catch (Throwable ignore) {}
+                            // Discovery: try ALL Identifier-returning methods on the ResourceKey.
+                            for (java.lang.reflect.Method m : key.getClass().getMethods()) {
+                                if (m.getParameterCount() != 0) continue;
+                                String rn = m.getReturnType().getSimpleName();
+                                if (!rn.equals("Identifier") && !rn.equals("ResourceLocation")) continue;
+                                try {
+                                    Object loc = m.invoke(key);
+                                    if (loc == null) continue;
+                                    String idStr = loc.toString();
+                                    Dimension d = Dimension.fromId(idStr);
+                                    if (d != Dimension.UNKNOWN) {
+                                        // Cache this successful accessor.
+                                        mDimLoc = m;
+                                        dimLogged = true;
+                                        return d;
+                                    }
+                                } catch (Throwable ignore) {}
+                            }
                         }
                     }
                 }

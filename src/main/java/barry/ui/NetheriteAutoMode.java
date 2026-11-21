@@ -61,17 +61,9 @@ public final class NetheriteAutoMode {
             enabled = true;
             barry.xray.XrayEngine eng = barry.render.RenderHook.engine();
             start(eng);
-            // Update menu label so button text changes.
-            if (barry.ui.Menu.NetherOptions.ITEMS.length > 0) {
-                barry.ui.Menu.NetherOptions.ITEMS[0] = "Start Auto Netherite";
-            }
         } else {
             // Disabling — stop and reset.
             stop();
-            // Restore menu label.
-            if (barry.ui.Menu.NetherOptions.ITEMS.length > 0) {
-                barry.ui.Menu.NetherOptions.ITEMS[0] = "Enable Auto";
-            }
         }
     }
 
@@ -338,21 +330,43 @@ public final class NetheriteAutoMode {
             try {
                 Method sendCmd = mcClass.getMethod("sendCommand", String.class, boolean.class);
                 sendCmd.invoke(mc, cmd, false);
+                System.err.println("[barry] NetherAuto: sent via sendCommand(String,boolean): " + cmd);
                 return;
             } catch (NoSuchMethodException ignored) {}
 
-            // Fallback: any sendCommand/getCommand method accepting a String
+            // Fallback: any sendCommand/getCommand method accepting a String as first param
             for (java.lang.reflect.Method m : mcClass.getMethods()) {
                 if ((m.getName().equals("sendCommand") || m.getName().equals("getCommand"))
                         && m.getParameterCount() >= 1
                         && m.getParameterTypes()[0] == String.class) {
                     m.setAccessible(true);
                     m.invoke(mc, cmd);
+                    System.err.println("[barry] NetherAuto: sent via " + m.getName() + "(String): " + cmd);
                     return;
                 }
             }
 
-            // Fallback: Minecraft.getCommands().processCommand(String) or handleCommand(String)
+            // Fallback 2: Minecraft.chat.addMessage(String/Component) — MC 26.x chat path
+            try {
+                Object chat = barry.render.RenderHook.findFieldByType(mc, "Chat");
+                if (chat != null) {
+                    for (java.lang.reflect.Method m : chat.getClass().getMethods()) {
+                        if ((m.getName().equals("addMessage") || m.getName().equals("sendMessage"))
+                                && m.getParameterCount() == 1) {
+                            Class<?> paramType = m.getParameterTypes()[0];
+                            String pn = paramType.getSimpleName();
+                            if (pn.equals("String") || pn.contains("Component") || pn.contains("Chat")) {
+                                m.setAccessible(true);
+                                m.invoke(chat, cmd);
+                                System.err.println("[barry] NetherAuto: sent via Chat." + m.getName() + ": " + cmd);
+                                return;
+                            }
+                        }
+                    }
+                }
+            } catch (Throwable ignored) {}
+
+            // Fallback 3: Minecraft.getCommands().processCommand(String) or handleCommand(String)
             try {
                 Object commands = barry.render.RenderHook.findFieldByType(mc, "Commands");
                 if (commands == null) {
@@ -367,6 +381,7 @@ public final class NetheriteAutoMode {
                                 && m.getParameterTypes()[0] == String.class) {
                             m.setAccessible(true);
                             m.invoke(commands, cmd);
+                            System.err.println("[barry] NetherAuto: sent via Commands." + m.getName() + ": " + cmd);
                             return;
                         }
                     }
@@ -378,6 +393,7 @@ public final class NetheriteAutoMode {
                 if (m.getName().equals("sendCommand") && m.getParameterCount() == 1) {
                     m.setAccessible(true);
                     m.invoke(mc, cmd);
+                    System.err.println("[barry] NetherAuto: sent via sendCommand(Object): " + cmd);
                     return;
                 }
             }

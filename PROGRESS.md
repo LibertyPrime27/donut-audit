@@ -98,6 +98,19 @@ Three root causes found in Minecraft logs after user tested the second version:
 - Modified: `BlockSource.java` (cachedLevelIsFresh()), `NetheriteAutoMode.java` (expanded sendCommand fallbacks + toggleEnabled updates menu label), `Menu.java` (toggleSelected closes menu on case 0)
 - Rebuilt agent.jar (339 KB) and audit-tool.exe published to test version folder
 
+## Nether Auto fourth fix — dimension + command still broken (2026-11-20)
+
+Two remaining issues found after testing the third version:
+
+**Issue 4a — Dimension returns OVERWORLD even with fresh ClientLevel:** The cached `mDimLoc` accessor method was discovered during overworld initialization. On MC 26.3, this accessor returns an Identifier string that doesn't match our known dimension IDs (minecraft:the_nether, etc.). Even after refreshing the level, the wrong accessor keeps returning OVERWORLD. **Fixed** by making `liveDimension()` always fetch current ClientLevel from Minecraft (not cached), and trying ALL Identifier-returning methods on the ResourceKey — caching whichever one succeeds.
+
+**Issue 4b — `/rtp nether` command not actually sent:** All reflection paths in `sendCommand()` failed silently on MC 26.3, printing "no command method found" but the last resort sendCommand(Object) may not route to chat. **Fixed** by adding a Chat-field path: tries `Minecraft.chat.addMessage(String/Component)` which is the reliable MC 26.x chat/command route. Also added logging per-path so we can see which path succeeds.
+
+**Issue 4c — Button text:** Changed ITEMS[0] from "Enable Auto" to **"Start Auto Netherite"** (static, no runtime swap). The [x]/[ ] prefix shows on/off state. Menu closes after enabling; overlay stays visible.
+
+- Modified: `BlockSource.java` (liveDimension always fetches current ClientLevel + tries all Identifier methods), `NetheriteAutoMode.java` (Chat-field sendCommand path + per-path logging), `Menu.java` (ITEMS[0] = "Start Auto Netherite")
+- Rebuilt agent.jar (340 KB) and audit-tool.exe published to test version folder
+
 ## Notes
 - Local LLM via LM Studio (huihui-qwen3.6-35b-a3b-abliterated) is used with Claude Code.
   Keep it in acceptEdits mode and commit after each working step.

@@ -108,7 +108,7 @@ public final class Menu {
         public enum Kind { TOGGLE, OPTION, ACTION };
 
         public static final String[] ITEMS = {
-            "Enable Auto",
+            "Start Auto Netherite",
             "--- Options ---",
             "Auto RTP",
             "Stay In Area",
