@@ -111,7 +111,7 @@ List<Mc> FindMinecraft()
             string pid = line.Substring(0, sp);
             string cmd = line.Substring(sp + 1);
             string low = cmd.ToLowerInvariant();
-            if (low.Contains("minecraft") && !low.Contains("audit-tool"))
+            if ((low.Contains("minecraft") || low.Contains("lunar")) && !low.Contains("audit-tool"))
                 list.Add(new Mc { Pid = pid, Cmd = cmd.Length > 90 ? cmd.Substring(0, 90) + "..." : cmd });
         }
     }

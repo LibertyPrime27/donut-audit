@@ -20,6 +20,8 @@ public final class Bootstrap {
     private static volatile boolean ejecting = false;
     private static volatile barry.xray.BlockSource blockSource;
 
+    public static barry.xray.BlockSource blockSource() { return blockSource; }
+
     private Bootstrap() {}
 
     public static void premain(String args, Instrumentation inst) {

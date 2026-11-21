@@ -79,7 +79,15 @@ public final class WorldRenderHook {
                 OreType ore = OreType.fromBlockName(e.getValue().blockName());
                 if (ore == OreType.ANCIENT_DEBRIS) debrisInRange++;
                 if (ore != null && !ore.isEnabled()) continue; // filtered out in the menu
-                int color = ore != null ? ore.color() : 0xFFFFFFFF;
+
+                int color;
+                if (barry.ui.NetheriteAutoMode.isBrightDebrisEsp()
+                        && barry.ui.NetheriteAutoMode.isEnabled()
+                        && ore == OreType.ANCIENT_DEBRIS) {
+                    color = barry.ui.NetheriteAutoMode.debrisColor(); // bright gold when auto mode active
+                } else {
+                    color = ore != null ? ore.color() : 0xFFFFFFFF;
+                }
                 mPush.invoke(pose);
                 mTranslate.invoke(pose, p.x() - camX, p.y() - camY, p.z() - camZ);
                 // (pose, shape, renderType, colorARGB, lineWidth, depthTest)
