@@ -125,6 +125,20 @@ Two definitive fixes after identifying root causes in logs:
 - **agent.jar in test version: 340189 bytes (19:53) — CORRECT VERSION**
 - audit-tool.exe rebuilt and copied to test version folder
 
+## Nether Auto sixth fix — command debug logging + correct jar verified (2026-11-20)
+
+Command still not running despite countdown appearing. Root cause analysis:
+
+**Issue 6a — Command dispatch fails silently on MC 26.3:** All five reflection paths in `sendCommand()` fail because method signatures don't match exactly. The last resort `sendCommand(Object)` finds and invokes a method, but sending as Object may not route to chat properly. **Fixed** by adding debug logging that prints all sendCommand/getCommand methods found on the MC 26.3 Minecraft class (with parameter types), so we can see exactly what's available.
+
+**Issue 6b — Chat field search refined:** The Chat path now iterates declaredFields with broader name matching (chat/Chat/Gui) and verifies addMessage/sendMessage exists before using it.
+
+**Verified correct jar in test folder:** agent.jar = **340413 bytes, 20:07** — identical to build output. audit-tool.exe = **35559141 bytes, 20:07** — rebuilt with new embedded jar. Both copied fresh to `C:\Users\Joeea\Desktop\test version\`.
+
+- Modified: `NetheriteAutoMode.java` (sendCommand debug logging + Chat field search)
+- **agent.jar in test version: 340413 bytes, 20:07 — CORRECT VERSION**
+- audit-tool.exe rebuilt and copied to test version folder
+
 ## Notes
 - Local LLM via LM Studio (huihui-qwen3.6-35b-a3b-abliterated) is used with Claude Code.
   Keep it in acceptEdits mode and commit after each working step.

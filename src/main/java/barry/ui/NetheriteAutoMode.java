@@ -326,6 +326,20 @@ public final class NetheriteAutoMode {
             String mcClassName = barry.attach.Remap.resolveClass("net.minecraft.client.Minecraft");
             Class<?> mcClass = cl.loadClass(mcClassName);
 
+            // Debug: log all sendCommand/getCommand methods found on MC 26.3
+            boolean debugLogged = false;
+            for (java.lang.reflect.Method m : mcClass.getMethods()) {
+                if ((m.getName().equals("sendCommand") || m.getName().equals("getCommand"))
+                        && !debugLogged) {
+                    StringBuilder sb = new StringBuilder();
+                    sb.append("[barry] NetherAuto: sendCommand methods on ");
+                    sb.append(mcClass.getSimpleName()).append(":");
+                    for (Class<?> p : m.getParameterTypes()) sb.append(" ").append(p.getSimpleName());
+                    System.err.println(sb.toString());
+                    debugLogged = true;
+                }
+            }
+
             // Try Minecraft.sendCommand(String, boolean) first
             try {
                 Method sendCmd = mcClass.getMethod("sendCommand", String.class, boolean.class);
@@ -377,7 +391,7 @@ public final class NetheriteAutoMode {
                             if (pn.equals("String") || pn.contains("Component") || pn.contains("Chat")) {
                                 m.setAccessible(true);
                                 m.invoke(chat, cmd);
-                                System.err.println("[barry] NetherAuto: sent via Chat." + m.getName() + ": " + cmd);
+                                System.err.println("[barry] NetherAuto: sent via Chat." + m.getName() + "(String): " + cmd);
                                 return;
                             }
                         }
