@@ -127,13 +127,15 @@ public final class Menu {
                 case 0: {
                     boolean wasEnabled = NetheriteAutoMode.isEnabled();
                     NetheriteAutoMode.toggleEnabled();
-                    // Close menu after enabling/disabling so user gets a clear view.
+                    // Close ALL menus after enabling/disabling so user gets a clear view.
                     if (!wasEnabled && NetheriteAutoMode.isEnabled()) {
-                        // Just enabled — close submenu, keep overlay on.
+                        // Just enabled — close nether submenu AND main menu, keep overlay on.
                         netherScreen = NetherScreen.NONE;
+                        screen = Screen.NONE;
                     } else if (wasEnabled && !NetheriteAutoMode.isEnabled()) {
-                        // Just disabled — close submenu.
+                        // Just disabled — close nether submenu AND main menu.
                         netherScreen = NetherScreen.NONE;
+                        screen = Screen.NONE;
                     }
                     break;
                 }

@@ -421,14 +421,15 @@ public final class RenderHook {
         String text = barry.ui.NetheriteAutoMode.countdownText();
         if (text.isEmpty()) return;
 
-        // Center on screen: assume 854x480 typical Minecraft resolution
+        // Center on screen: assume 854x480 typical Minecraft resolution.
+        // Lowered from y=200 to y=260 so it's not cut off at top.
         int centerX = 427;
-        int centerY = 200;
+        int centerY = 260;
 
-        // Background bar — semi-transparent black
-        int textWidth = text.length() * 9;
-        fillRect(graphics, centerX - textWidth / 2 - 20, centerY - 14,
-                centerX + textWidth / 2 + 20, centerY + 18, 0x80000000);
+        // Background bar — semi-transparent black, wider for longer text
+        int textWidth = text.length() * 10;
+        fillRect(graphics, centerX - textWidth / 2 - 24, centerY - 16,
+                centerX + textWidth / 2 + 24, centerY + 20, 0x80000000);
 
         // Text — white with nether amber tint
         drawStr(graphics, text, centerX - textWidth / 2, centerY, 0xFFFFFFFF);

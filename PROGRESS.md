@@ -139,6 +139,21 @@ Command still not running despite countdown appearing. Root cause analysis:
 - **agent.jar in test version: 340413 bytes, 20:07 — CORRECT VERSION**
 - audit-tool.exe rebuilt and copied to test version folder
 
+## Nether Auto seventh fix — countdown duration + positioning + menu exit + chat opens (2026-11-20)
+
+Four issues found after testing the sixth version:
+
+**Issue 7a — Countdown fails at 2:** `RTP_DURATION_MS=3000` but RTP thread total time is ~2.5s (500ms wait + 2000ms teleport). Countdown stops at "2s" before reaching "1s". **Fixed** by increasing to `4000ms` so countdown covers full duration: 4→3→2→1→done.
+
+**Issue 7b — Countdown cut off:** Positioned too high (y=200) on screen, background bar not wide enough for longer text. **Fixed** by lowering to y=260 and widening text multiplier from 9→10 with extra padding.
+
+**Issue 7c — Menu doesn't exit:** When enabling from Nether Auto submenu, only `netherScreen` was closed but main menu (`screen`) stayed as MAIN. **Fixed** in `NetherOptions.toggleSelected()` case 0 — now closes BOTH `netherScreen = NONE` AND `screen = Screen.NONE`, so all menus disappear while overlay stays on.
+
+**Issue 7d — Chat never opens:** `/rtp nether` sent via reflection but Minecraft's ChatScreen never opened, so command never appears in chat input. **Fixed** by adding `openChatScreen()` method that finds ChatScreen class and calls `Minecraft.openScreen(ChatScreen)` before sending the command.
+
+- Modified: `NetheriteAutoMode.java` (RTP_DURATION_MS=4000 + openChatScreen()), `Menu.java` (case 0 closes both menus), `RenderHook.java` (countdown y=260, wider bar)
+- **agent.jar in test version: 341325 bytes — CORRECT VERSION**
+
 ## Notes
 - Local LLM via LM Studio (huihui-qwen3.6-35b-a3b-abliterated) is used with Claude Code.
   Keep it in acceptEdits mode and commit after each working step.

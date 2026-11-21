@@ -43,7 +43,7 @@ public final class NetheriteAutoMode {
     private static volatile long findTime;                      // timestamp when debris was found
 
     // Countdown display
-    public static final long RTP_DURATION_MS = 3000;            // 3-second countdown
+    public static final long RTP_DURATION_MS = 4000;            // 4-second countdown (covers 500ms wait + 2s teleport + buffer)
     private static volatile long countdownStartMs = 0;
     private static volatile boolean showCountdown = false;
 
@@ -149,7 +149,7 @@ public final class NetheriteAutoMode {
 
     public static boolean isShowCountdown() { return showCountdown; }
 
-    /** Returns the remaining seconds for the countdown (1, 2, or 3). */
+    /** Returns the remaining seconds for the countdown (1, 2, 3, or 4). */
     public static int countdownRemaining() {
         if (!showCountdown) return 0;
         long elapsed = System.currentTimeMillis() - countdownStartMs;
@@ -158,7 +158,7 @@ public final class NetheriteAutoMode {
         return Math.max(1, (int) ((remaining + 999) / 1000)); // ceiling division
     }
 
-    /** Returns the countdown text: "RTP in 3s...", "RTP in 2s...", etc. */
+    /** Returns the countdown text: "RTP in 4s...", "RTP in 3s...", etc. */
     public static String countdownText() {
         if (!showCountdown) return "";
         int rem = countdownRemaining();
@@ -169,6 +169,59 @@ public final class NetheriteAutoMode {
     public static boolean countdownAlmostDone() {
         if (!showCountdown) return false;
         return System.currentTimeMillis() - countdownStartMs >= RTP_DURATION_MS * 2 / 3;
+    }
+
+    /** Open Minecraft's ChatScreen so typed commands appear in chat input. */
+    public static void openChatScreen() {
+        try {
+            Object mc = barry.render.RenderHook.minecraftInstance();
+            if (mc == null) return;
+            ClassLoader cl = mc.getClass().getClassLoader();
+            String mcClassName = barry.attach.Remap.resolveClass("net.minecraft.client.Minecraft");
+            Class<?> mcClass = cl.loadClass(mcClassName);
+
+            // Find ChatScreen class
+            String chatScreenName = barry.attach.Remap.resolveClass("net.minecraft.client.gui.screens.ChatScreen");
+            Class<?> chatScreenClass = cl.loadClass(chatScreenName);
+
+            // Minecraft.openScreen(Object) — takes any Screen
+            for (java.lang.reflect.Method m : mcClass.getMethods()) {
+                if (m.getName().equals("openScreen") && m.getParameterCount() == 1) {
+                    m.setAccessible(true);
+                    Object chatScreen;
+                    try {
+                        chatScreen = chatScreenClass.getConstructor().newInstance();
+                    } catch (NoSuchMethodException ignore) {
+                        java.util.function.Supplier<String> sup = () -> "";
+                        chatScreen = chatScreenClass.getConstructor(java.util.function.Supplier.class).newInstance(new Object[]{sup});
+                    }
+                    m.invoke(mc, chatScreen);
+                    System.err.println("[barry] NetherAuto: opened ChatScreen.");
+                    return;
+                }
+            }
+
+            // Fallback: try Minecraft.setScreen(Object)
+            for (java.lang.reflect.Method m : mcClass.getMethods()) {
+                if (m.getName().equals("setScreen") && m.getParameterCount() == 1) {
+                    m.setAccessible(true);
+                    Object chatScreen;
+                    try {
+                        chatScreen = chatScreenClass.getConstructor().newInstance();
+                    } catch (NoSuchMethodException ignore) {
+                        java.util.function.Supplier<String> sup = () -> "";
+                        chatScreen = chatScreenClass.getConstructor(java.util.function.Supplier.class).newInstance(new Object[]{sup});
+                    }
+                    m.invoke(mc, chatScreen);
+                    System.err.println("[barry] NetherAuto: opened ChatScreen via setScreen.");
+                    return;
+                }
+            }
+
+            System.err.println("[barry] NetherAuto: could not open ChatScreen (no openScreen/setScreen found).");
+        } catch (Throwable t) {
+            System.err.println("[barry] NetherAuto: openChatScreen error: " + t.getMessage());
+        }
     }
 
     // === Auto-mode lifecycle ===
@@ -285,6 +338,7 @@ public final class NetheriteAutoMode {
                     rtpCenterZ = (double) getZ.invoke(player);
 
                     // Send /rtp command via Minecraft's chat/command system
+                    openChatScreen(); // Open ChatScreen so command appears in chat input
                     startCountdown();
                     sendCommand("/rtp nether");
 
