@@ -26,6 +26,7 @@ public final class Overlay {
     private static volatile boolean lastMenuDown = false;
     private static volatile boolean lastMenuToggleItem = false;
     private static volatile boolean lastEsc = false;
+    private static volatile boolean lastCancelState = false;
     private static volatile boolean diagLogged = false;
 
     // Rebind capture: snapshot of keys held when capture began (ignored until
@@ -76,6 +77,9 @@ public final class Overlay {
     }
 
     public static void panic() {
+        if (barry.ui.NetheriteAutoMode.isEnabled()) {
+            barry.ui.NetheriteAutoMode.stop();
+        }
         VISIBLE.set(false);
         Menu.close();
         Fullbright.set(false); // revert to the vanilla look on panic
@@ -113,6 +117,18 @@ public final class Overlay {
             }
             lastPanicState = panicDown;
 
+            // CANCEL fires on key-down when Nether Auto is active
+            boolean cancelDown = isActionPressed(Action.CANCEL);
+            if (cancelDown && !lastCancelState) {
+                if (barry.ui.NetheriteAutoMode.isEnabled()) {
+                    barry.ui.NetheriteAutoMode.stop();
+                    System.err.println("[barry] NetherAuto: cancelled via CANCEL key.");
+                }
+                lastCancelState = true;
+                return; // Don't process other keys on this tick after cancel
+            }
+            lastCancelState = cancelDown;
+
             // Toggle fires on key-down edge
             if (toggleDown && !lastToggleState) {
                 boolean now = !VISIBLE.get();
@@ -138,7 +154,7 @@ public final class Overlay {
             }
             lastMenuState = menuKey;
 
-            if (Menu.isOpen()) {
+            if (Menu.isOpen() || Menu.isNetherOpen()) {
                 boolean up = isActionPressed(Action.MENU_UP);
                 boolean dn = isActionPressed(Action.MENU_DOWN);
                 // Activate = RIGHT (bindable) OR LEFT OR ENTER OR SPACE — all select/toggle.
@@ -149,28 +165,35 @@ public final class Overlay {
                 boolean tgEdge = tg && !lastMenuToggleItem;
 
                 if (!SettingsMenu.isCapturing()) {
-                    switch (Menu.screen()) {
-                        case MAIN:
-                            if (upEdge) Menu.mainUp();
-                            if (dnEdge) Menu.mainDown();
-                            if (tgEdge) Menu.mainSelect();
-                            break;
-                        case BLOCKS:
-                            if (upEdge) FilterMenu.up();
-                            if (dnEdge) FilterMenu.down();
-                            if (tgEdge) FilterMenu.toggleSelected();
-                            break;
-                        case ENTITIES:
-                            if (upEdge) EntityFilterMenu.up();
-                            if (dnEdge) EntityFilterMenu.down();
-                            if (tgEdge) EntityFilterMenu.toggleSelected();
-                            break;
-                        case KEYS:
-                            if (upEdge) SettingsMenu.up();
-                            if (dnEdge) SettingsMenu.down();
-                            if (tgEdge) { SettingsMenu.beginCapture(); captureStart(); }
-                            break;
-                        default: break;
+                    if (Menu.isNetherOpen()) {
+                        // Nether Auto submenu takes priority
+                        if (upEdge) Menu.netherUp();
+                        if (dnEdge) Menu.netherDown();
+                        if (tgEdge) Menu.netherSelect();
+                    } else {
+                        switch (Menu.screen()) {
+                            case MAIN:
+                                if (upEdge) Menu.mainUp();
+                                if (dnEdge) Menu.mainDown();
+                                if (tgEdge) Menu.mainSelect();
+                                break;
+                            case BLOCKS:
+                                if (upEdge) FilterMenu.up();
+                                if (dnEdge) FilterMenu.down();
+                                if (tgEdge) FilterMenu.toggleSelected();
+                                break;
+                            case ENTITIES:
+                                if (upEdge) EntityFilterMenu.up();
+                                if (dnEdge) EntityFilterMenu.down();
+                                if (tgEdge) EntityFilterMenu.toggleSelected();
+                                break;
+                            case KEYS:
+                                if (upEdge) SettingsMenu.up();
+                                if (dnEdge) SettingsMenu.down();
+                                if (tgEdge) { SettingsMenu.beginCapture(); captureStart(); }
+                                break;
+                            default: break;
+                        }
                     }
                 }
                 lastMenuUp = up; lastMenuDown = dn; lastMenuToggleItem = tg;
@@ -179,6 +202,7 @@ public final class Overlay {
                 boolean esc = sdlPressed(41);
                 if (esc && !lastEsc) {
                     if (SettingsMenu.isCapturing()) SettingsMenu.endCapture();
+                    else if (Menu.isNetherOpen()) Menu.netherBack();
                     else Menu.back();
                 }
                 lastEsc = esc;
@@ -216,10 +240,37 @@ public final class Overlay {
             barry.esp.EntityTracker.scan();
         }
 
+        // Nether Auto periodic tick (~2 Hz)
+        if ((tickCount++ % 25) == 0) {
+            tryTickNetherAuto();
+        }
+
         // If visible, schedule render work on the game thread
         if (VISIBLE.get()) {
             renderOverlay();
         }
+    }
+
+    private static volatile long tickCount = 0;
+
+    private static void tryTickNetherAuto() {
+        try {
+            if (barry.ui.NetheriteAutoMode.isEnabled()) {
+                Object mc = barry.render.RenderHook.minecraftInstance();
+                if (mc != null) {
+                    // Get the XrayEngine from RenderHook
+                    barry.xray.XrayEngine eng = barry.render.RenderHook.engine();
+                    if (eng == null) {
+                        // Fallback: access via the Bootstrap's blockSource
+                        barry.xray.BlockSource bs = barry.Bootstrap.blockSource();
+                        if (bs != null) {
+                            eng = bs.engine;
+                        }
+                    }
+                    barry.ui.NetheriteAutoMode.tick(eng);
+                }
+            }
+        } catch (Throwable ignored) {}
     }
 
     // Input backend. 1.21.x uses GLFW; 26.x uses SDL3. Detected once.

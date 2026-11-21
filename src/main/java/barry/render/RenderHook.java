@@ -57,6 +57,9 @@ public final class RenderHook {
     public static EspRenderer esp() { return espRenderer; }
     public static HudRenderer hud() { return hudRenderer; }
 
+    // Package-visible accessor for the XrayEngine (used by Overlay's Nether Auto tick).
+    public static barry.xray.XrayEngine engine() { return engine; }
+
     // Called from the injected hook in the game's render method
     // This runs on the render thread
     public static void onRenderWorld(Object poseStack, float partialTick) {
@@ -153,7 +156,7 @@ public final class RenderHook {
         return null;
     }
 
-    private static Object findFieldByType(Object obj, String typeNameContains) {
+    public static Object findFieldByType(Object obj, String typeNameContains) {
         for (Field f : obj.getClass().getDeclaredFields()) {
             if (f.getType().getSimpleName().contains(typeNameContains)) {
                 try {
@@ -250,6 +253,16 @@ public final class RenderHook {
                     default: break;
                 }
             }
+
+            // Nether Auto panel (drawn on top when open)
+            if (barry.ui.Menu.isNetherOpen() && Overlay.isVisible()) {
+                drawNetherMenu(graphics);
+            }
+
+            // Centered countdown overlay during RTP phase
+            if (barry.ui.NetheriteAutoMode.isShowCountdown()) {
+                drawCountdownMessage(graphics);
+            }
         } catch (Throwable ignored) {}
     }
 
@@ -276,6 +289,7 @@ public final class RenderHook {
             if (i == 1) { on = barry.ui.Fullbright.isOn(); label = label + ": " + (on ? "ON" : "OFF"); }
             if (i == 2) { on = barry.esp.EntityTypes.isEnabled("player"); label = label + ": " + (on ? "ON" : "OFF"); }
             if (i == 3) { on = enEnts > 0; label = label + " (" + enEnts + "): " + (on ? "ON" : "OFF"); }
+            if (i == 5) { on = barry.ui.NetheriteAutoMode.isEnabled(); label = label + ": " + (on ? "ON" : "OFF"); }
             String prefix = selected ? "> " : "  ";
             int col = selected ? 0xFFFFFFFF : 0xFFCCCCCC;
             if (on && !selected) col = (i == 2 || i == 3) ? 0xFFFF6666 : 0xFF66FF66;
@@ -402,6 +416,95 @@ public final class RenderHook {
         }
     }
 
+    /** Draw a large centered countdown message during the RTP phase. */
+    private static void drawCountdownMessage(Object graphics) {
+        String text = barry.ui.NetheriteAutoMode.countdownText();
+        if (text.isEmpty()) return;
+
+        // Center on screen: assume 854x480 typical Minecraft resolution
+        int centerX = 427;
+        int centerY = 200;
+
+        // Background bar — semi-transparent black
+        int textWidth = text.length() * 9;
+        fillRect(graphics, centerX - textWidth / 2 - 20, centerY - 14,
+                centerX + textWidth / 2 + 20, centerY + 18, 0x80000000);
+
+        // Text — white with nether amber tint
+        drawStr(graphics, text, centerX - textWidth / 2, centerY, 0xFFFFFFFF);
+    }
+
+    // === Nether Auto panel ===
+
+    private static void drawNetherMenu(Object graphics) {
+        String[] items = barry.ui.Menu.NetherOptions.ITEMS;
+        int sel = barry.ui.Menu.netherSel();
+        int x = 140, top = 24, w = 260, rowH = 10;
+        int rows = items.length;
+        int h = (rows + 2) * rowH + 8;
+
+        // Background with orange/amber theme for nether
+        fillRect(graphics, x - 6, top - 6, x + w, top + h, 0xC01A1008);
+        fillRect(graphics, x - 6, top - 6, x + w, top - 5, 0xFFFF8833);
+        fillRect(graphics, x - 6, top + h - 1, x + w, top + h, 0xFFFF8833);
+
+        int y = top;
+        drawStr(graphics, "NETHER AUTO  Esc:back  UP/DOWN:move  RIGHT:toggle", x, y, 0xFFFF8833);
+        y += rowH;
+
+        for (int i = 0; i < items.length; i++) {
+            boolean selected = (i == sel);
+            if (selected) fillRect(graphics, x - 4, y - 1, x + w - 2, y + rowH - 2, 0x40FFFFFF);
+
+            String label = items[i];
+            int col;
+
+            // Section headers (--- ...)
+            if (label.startsWith("---")) {
+                col = 0xFFCCAA66;
+                drawStr(graphics, "    " + label, x, y, col);
+                y += rowH;
+                continue;
+            }
+
+            // Show current value for toggle options
+            boolean on = false;
+            switch (i) {
+                case 0: on = barry.ui.NetheriteAutoMode.isEnabled(); break;
+                case 2: on = barry.ui.NetheriteAutoMode.isAutoRtp(); break;
+                case 3: on = barry.ui.NetheriteAutoMode.isStayInArea(); break;
+                case 4: on = barry.ui.NetheriteAutoMode.isKeepSearching(); break;
+                case 5: on = barry.ui.NetheriteAutoMode.isBrightDebrisEsp(); break;
+                case 7: on = barry.ui.NetheriteAutoMode.isDisconnectOnFind(); break;
+                case 8: on = barry.ui.NetheriteAutoMode.isHealthCheckDisconnect(); break;
+            }
+
+            if (i == 9) {
+                // Health threshold — show the number
+                int val = barry.ui.NetheriteAutoMode.getHealthThreshold();
+                label = "Health Threshold: " + val;
+                col = selected ? 0xFFFFFFFF : 0xFFCCCCCC;
+            } else {
+                String prefix = selected ? "> " : "  ";
+                String box = on ? "[x] " : "[ ] ";
+                if (on && !selected) col = 0xFFFFAA55; // warm amber when ON
+                else if (on && selected) col = 0xFFFFFFFF;
+                else col = selected ? 0xFFFFFFFF : 0xFF888888;
+                label = prefix + box + label;
+            }
+
+            drawStr(graphics, label, x, y, col);
+            y += rowH;
+        }
+
+        // Show current state at bottom
+        String stateLine = barry.ui.NetheriteAutoMode.hudLine();
+        if (!stateLine.isEmpty()) {
+            y += 2;
+            drawStr(graphics, "  " + stateLine, x, y, 0xFFFFCC66);
+        }
+    }
+
     private static volatile String[] cachedLines = {"[barry] ACTIVE"};
     private static volatile long linesStamp;
 
@@ -421,6 +524,12 @@ public final class RenderHook {
 
             java.util.List<String> out = new java.util.ArrayList<>();
             out.add("[barry] " + dim + " | ores:" + ores + " | BACKTICK=toggle DELETE=panic");
+
+            // Nether Auto status line
+            String netherLine = barry.ui.NetheriteAutoMode.hudLine();
+            if (!netherLine.isEmpty()) {
+                out.add("  " + netherLine);
+            }
 
             // Active-scan status line: "scanning for ores + mobs" / "idle".
             int enBlocks = barry.core.OreType.enabledCount();

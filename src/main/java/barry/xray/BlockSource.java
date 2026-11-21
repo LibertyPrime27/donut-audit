@@ -23,7 +23,7 @@ public final class BlockSource {
     private static final int DEFAULT_VERTICAL = 56; // reach ore levels (e.g. nether ancient_debris at Y8-22)
     private static final long SCAN_PERIOD_MS = 500;
 
-    private volatile XrayEngine engine;
+    public volatile XrayEngine engine;
     private volatile ClassLoader cl;
     private volatile Thread scanThread;
     private volatile boolean running;
@@ -286,6 +286,61 @@ public final class BlockSource {
             }
             dimLogged = true;
         } catch (Throwable ignore) {}
+        return null;
+    }
+
+    /**
+     * Live dimension detection — performs a fresh reflection read of
+     * ClientLevel.dimension() → ResourceKey → Identifier at call time.
+     * Falls back to the engine's cached dimension if level handles aren't ready.
+     */
+    public Dimension liveDimension() {
+        try {
+            if (mDimension != null) {
+                Object level = findLevel();
+                if (level != null) {
+                    Object key = mDimension.invoke(level);
+                    if (key != null) {
+                        // Use cached accessor first.
+                        if (mDimLoc != null) {
+                            Object loc = mDimLoc.invoke(key);
+                            if (loc != null) {
+                                Dimension d = Dimension.fromId(loc.toString());
+                                if (d != Dimension.UNKNOWN) return d;
+                            }
+                        }
+                        // One-shot discovery: find an Identifier-returning accessor.
+                        for (java.lang.reflect.Method m : key.getClass().getMethods()) {
+                            if (m.getParameterCount() != 0) continue;
+                            String rn = m.getReturnType().getSimpleName();
+                            if (!rn.equals("Identifier") && !rn.equals("ResourceLocation")) continue;
+                            try {
+                                Object loc = m.invoke(key);
+                                if (loc == null) continue;
+                                Dimension d = Dimension.fromId(loc.toString());
+                                if (d != Dimension.UNKNOWN) return d;
+                            } catch (Throwable ignore) {}
+                        }
+                    }
+                }
+            }
+        } catch (Throwable ignored) {}
+        // Fallback to engine cached dimension.
+        if (engine != null) {
+            Dimension cd = engine.currentDimension();
+            if (cd != Dimension.UNKNOWN && cd != Dimension.OVERWORLD) return cd;
+        }
+        return Dimension.UNKNOWN;
+    }
+
+    private Object findLevel() {
+        if (engine == null) return null;
+        try {
+            Object mc = barry.render.RenderHook.minecraftInstance();
+            if (mc != null) {
+                return fieldByTypeName(mc, "ClientLevel");
+            }
+        } catch (Throwable ignored) {}
         return null;
     }
 
